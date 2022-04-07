@@ -1,6 +1,8 @@
 set(TEST_SOURCES
         Tester.cpp
-        )
+        TestFileManager.cpp
+
+        TesterUtils.cpp TesterUtils.h)
 
 add_clang_tidy_target(lint_tester_core ${TEST_SOURCES})
 add_dependencies(lint lint_tester_core)

@@ -1,0 +1,28 @@
+compile_btree:
+  script:
+    - mkdir ci_build_implementation
+    - cd ci_build_implementation
+    - cmake -DCMAKE_BUILD_TYPE=Release ..
+    - make b_epsilon
+  tags:
+    - cmake
+
+run_tests:
+  script:
+    - mkdir ci_build_implementation
+    - cd ci_build_implementation
+    - cmake -DCMAKE_BUILD_TYPE=Release ..
+    - make tester
+    - ./test/tester
+  tags:
+    - cmake
+
+lint_btree:
+  script:
+    - mkdir ci_lint_implementation
+    - cd ci_lint_implementation
+    - cmake -DCMAKE_BUILD_TYPE=Release ..
+    - make lint
+  tags:
+    - cmake
+#    - clang-tidy-12

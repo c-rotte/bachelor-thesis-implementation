@@ -1,7 +1,6 @@
 set(B_EPSILON_SOURCES
         file/FileManager.cpp
-
-        )
+        file/SegmentManager.cpp)
 
 add_library(b_epsilon_core ${B_EPSILON_SOURCES})
 target_include_directories(b_epsilon_core PUBLIC ${CMAKE_SOURCE_DIR})

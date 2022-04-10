@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 // --------------------------------------------------------------------------
+#include "external/ThreadPool.h"
 #include "src/file/FileManager.h"
 #include <filesystem>
 #include <unordered_set>
@@ -88,3 +89,38 @@ TEST(FileManager, DeleteSingleThreaded) {
     ASSERT_LE(fileManager.allocatedBlocks(), 1000);
 }
 // --------------------------------------------------------------------------
+TEST(FileManager, WriteMultiThreaded) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 4096;
+    FileManager<BLOCK_SIZE> fileManager(FILENAME, 10000);
+    for (int i = 0; i < 10000; i++) {
+        size_t id = fileManager.createBlock();
+        ASSERT_EQ(id, i);
+        array<unsigned char, BLOCK_SIZE> arr;
+        fill(arr.begin(), arr.end(), 1);
+        fileManager.writeBlock(id, move(arr));
+    }
+    ThreadPool threadPool(32);
+    vector<future<void>> calls;
+    for (int i = 0; i < 10000; i++) {
+        calls.emplace_back(threadPool.enqueue([&fileManager]() {
+            for (int j = 0; j < 50; j++) {
+                size_t randID = rand() % 1000;
+                unsigned char randVal = rand() % 256;
+                array<unsigned char, BLOCK_SIZE> arr;
+                fill(arr.begin(), arr.end(), randVal);
+                fileManager.writeBlock(randID, move(arr));
+            }
+        }));
+    }
+    for(auto& call : calls){
+        call.get();
+    }
+    for (int i = 0; i < 10000; i++) {
+        array<unsigned char, BLOCK_SIZE> arr = fileManager.readBlock(i);
+        unsigned char val = arr[0];
+        for (unsigned char c: arr) {
+            ASSERT_EQ(c, val);
+        }
+    }
+}

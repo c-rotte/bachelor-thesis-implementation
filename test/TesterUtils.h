@@ -4,23 +4,14 @@
 #include <functional>
 #include <thread>
 #include <vector>
+#include <queue>
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
 // --------------------------------------------------------------------------
 namespace utils {
 // --------------------------------------------------------------------------
-class DummyThreadPool {
 
-private:
-
-    std::vector<std::thread> threads;
-
-public:
-
-    DummyThreadPool() = default;
-
-    void submit(std::function<void()>);
-    void join();
-
-};
 // --------------------------------------------------------------------------
 }// namespace utils
 // --------------------------------------------------------------------------

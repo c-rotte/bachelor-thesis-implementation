@@ -153,9 +153,9 @@ std::uint64_t SegmentManager<B>::createBlock() {
                                           std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
             assert(!fileManager);
             // lock the segment
-            std::unique_lock segmentLock(segmentMutex);
+            std::scoped_lock segmentLock(segmentMutex);
             // mark the segment as free
-            freeSegments.insert(segmentIndex);
+            freeSegments.insert(segmentIndex); // only operation which needs both locks
             // unlock the segment manager
             mainLock.unlock();
             // initialize the fileManager
@@ -172,12 +172,12 @@ std::uint64_t SegmentManager<B>::createBlock() {
     segment.accessFileManager([this, &mainLock, segmentIndex, &blockID](
                                       std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
         // lock the segment
-        std::unique_lock segmentLock(segmentMutex);
+        std::scoped_lock segmentLock(segmentMutex);
         assert(fileManager);
         assert(fileManager->freeBlocks() > 0);
         if (fileManager->freeBlocks() == 1) {
             // mark the segment as full
-            freeSegments.erase(segmentIndex);
+            freeSegments.erase(segmentIndex); // only operation which needs both locks
         }
         // unlock the segment manager
         mainLock.unlock();
@@ -199,10 +199,10 @@ void SegmentManager<B>::deleteBlock(std::uint64_t id) {
     segment->accessFileManager([this, &mainLock, blockID, segmentIndex](
                                        std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
         // lock the segment
-        std::unique_lock segmentLock(segmentMutex);
+        std::scoped_lock segmentLock(segmentMutex);
         assert(fileManager);
         // mark the segment as free
-        freeSegments.insert(segmentIndex);
+        freeSegments.insert(segmentIndex); // only operation which needs both locks
         // unlock the segment manager
         mainLock.unlock();
         // IO write

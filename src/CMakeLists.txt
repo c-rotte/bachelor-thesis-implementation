@@ -1,6 +1,9 @@
 set(B_EPSILON_SOURCES
         file/FileManager.cpp
-        file/SegmentManager.cpp ../external/ThreadPool.h)
+        file/SegmentManager.cpp
+        buffer/PageBuffer.cpp
+        buffer/queue/FIFOQueue.cpp
+        buffer/queue/LRUQueue.cpp)
 
 add_library(b_epsilon_core ${B_EPSILON_SOURCES})
 target_include_directories(b_epsilon_core PUBLIC ${CMAKE_SOURCE_DIR})

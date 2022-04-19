@@ -3,12 +3,12 @@
 // --------------------------------------------------------------------------
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <list>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
-#include <stdexcept>
-#include <iterator>
 // --------------------------------------------------------------------------
 namespace buffer::queue {
 // --------------------------------------------------------------------------
@@ -23,23 +23,27 @@ template<class K, class V>
 class Queue {
 
 protected:
-    const std::size_t maxEntries;
     std::list<Entry<K, V>> entryQueue;
     std::unordered_map<K, typename std::list<Entry<K, V>>::iterator> pointerMap;
 
 public:
-    explicit Queue(std::size_t);
+    Queue() = default;
     virtual ~Queue() = default;
 
 public:
+    std::size_t size() const;
     const std::list<Entry<K, V>>& getList() const;
-    std::optional<Entry<K, V>> insert(K, V, std::function<bool(const V&)>);
+    // inserts Entry(K, V)
+    void insert(K, V);
+    Entry<K, V> remove(const K&);
+    std::optional<Entry<K, V>> removeOne(std::function<bool(const V&)>);
     bool contains(const K&) const;
-    virtual V& find(const K&) = 0;
+    virtual V& find(const K&, bool) = 0;
 };
 // --------------------------------------------------------------------------
 template<class K, class V>
-Queue<K, V>::Queue(std::size_t maxEntries) : maxEntries(maxEntries) {
+std::size_t Queue<K, V>::size() const {
+    return pointerMap.size();
 }
 // --------------------------------------------------------------------------
 template<class K, class V>
@@ -48,31 +52,40 @@ const std::list<Entry<K, V>>& Queue<K, V>::getList() const {
 }
 // --------------------------------------------------------------------------
 template<class K, class V>
-std::optional<Entry<K, V>> Queue<K, V>::insert(K key, V value,
-                                                   std::function<bool(const V&)> predicate) {
-    if(contains(key)){
+void Queue<K, V>::insert(K key, V value) {
+    if (contains(key)) {// TODO: remove check
         throw std::runtime_error("Key was already in the queue!");
-    }
-    std::optional<Entry<K, V>> removedEntry = std::nullopt;
-    assert(pointerMap.size() <= maxEntries);
-    if(pointerMap.size() == maxEntries){
-        // queue -> iterate until we find a fitting entry to remove
-        for(auto it = entryQueue.rbegin(); it != entryQueue.rend(); ++it){
-            if(predicate(it->second)){
-                // remove the entry
-                removedEntry = std::move(*it);
-                entryQueue.erase(std::next(it).base());
-                pointerMap.erase(removedEntry->first);
-                break;
-            }
-        }
-        if(!removedEntry){
-            throw std::runtime_error("Queue is full! (FIFO)");
-        }
     }
     // inserted values are at the front
     entryQueue.push_front(std::make_pair(key, std::move(value)));
     pointerMap[key] = entryQueue.begin();
+}
+// --------------------------------------------------------------------------
+template<class K, class V>
+Entry<K, V> Queue<K, V>::remove(const K& key) {
+    if (!contains(key)) {// TODO: remove check
+        throw std::runtime_error("Key was not in the queue!");
+    }
+    auto it = pointerMap[key];
+    Entry<K, V> removedEntry = std::move(*it);
+    entryQueue.erase(it);
+    pointerMap.erase(key);
+    return removedEntry;
+}
+// --------------------------------------------------------------------------
+template<class K, class V>
+std::optional<Entry<K, V>> Queue<K, V>::removeOne(std::function<bool(const V&)> predicate) {
+    std::optional<Entry<K, V>> removedEntry = std::nullopt;
+    // queue -> iterate until we find a fitting entry to remove
+    for (auto it = entryQueue.rbegin(); it != entryQueue.rend(); ++it) {
+        if (predicate(it->second)) {
+            // remove the entry
+            removedEntry = std::move(*it);
+            entryQueue.erase(std::next(it).base());
+            pointerMap.erase(removedEntry->first);
+            break;
+        }
+    }
     return removedEntry;
 }
 // --------------------------------------------------------------------------

@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -49,7 +49,7 @@ private:
     std::vector<std::unique_ptr<Segment>> segments;
     std::unordered_set<std::size_t> freeSegments;
     const double growthFactor;
-    mutable std::mutex mutex;// mutex for block creation and deletion (freelist)
+    mutable std::shared_mutex mutex;// mutex for block creation and deletion (freelist)
 
 public:
     SegmentManager() = delete;
@@ -67,7 +67,7 @@ public:
     std::array<unsigned char, B> readBlock(std::uint64_t);
     void writeBlock(std::uint64_t, std::array<unsigned char, B>);
 
-    void flush();
+    void flush();// not thread-safe
 
     SegmentManager<B>& operator=(const SegmentManager<B>&) = delete;
     SegmentManager<B>& operator=(SegmentManager<B>&&) noexcept = default;
@@ -155,7 +155,7 @@ std::uint64_t SegmentManager<B>::createBlock() {
             // lock the segment
             std::scoped_lock segmentLock(segmentMutex);
             // mark the segment as free
-            freeSegments.insert(segmentIndex); // only operation which needs both locks
+            freeSegments.insert(segmentIndex);// only operation which needs both locks
             // unlock the segment manager
             mainLock.unlock();
             // initialize the fileManager
@@ -177,7 +177,7 @@ std::uint64_t SegmentManager<B>::createBlock() {
         assert(fileManager->freeBlocks() > 0);
         if (fileManager->freeBlocks() == 1) {
             // mark the segment as full
-            freeSegments.erase(segmentIndex); // only operation which needs both locks
+            freeSegments.erase(segmentIndex);// only operation which needs both locks
         }
         // unlock the segment manager
         mainLock.unlock();
@@ -202,7 +202,7 @@ void SegmentManager<B>::deleteBlock(std::uint64_t id) {
         std::scoped_lock segmentLock(segmentMutex);
         assert(fileManager);
         // mark the segment as free
-        freeSegments.insert(segmentIndex); // only operation which needs both locks
+        freeSegments.insert(segmentIndex);// only operation which needs both locks
         // unlock the segment manager
         mainLock.unlock();
         // IO write
@@ -216,7 +216,7 @@ std::array<unsigned char, B> SegmentManager<B>::readBlock(std::uint64_t id) {
     const std::size_t segmentIndex = getIndexFromID(id);
     const std::size_t blockID = getBlockFromID(id);
     // lock the segment manager
-    std::unique_lock mainLock(mutex);
+    std::shared_lock mainLock(mutex);
     auto& segment = *segments.at(segmentIndex);
     // unlock the segment manager
     mainLock.unlock();
@@ -238,7 +238,7 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
     const std::size_t segmentIndex = getIndexFromID(id);
     const std::size_t blockID = getBlockFromID(id);
     // lock the segment manager
-    std::unique_lock mainLock(mutex);
+    std::shared_lock mainLock(mutex);
     auto& segment = *segments.at(segmentIndex);
     // unlock the segment manager
     mainLock.unlock();

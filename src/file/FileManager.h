@@ -6,6 +6,7 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
@@ -13,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <unistd.h>
+#include <unordered_set>
 // --------------------------------------------------------------------------
 namespace file {
 // --------------------------------------------------------------------------
@@ -69,7 +71,7 @@ public:
 template<std::uint64_t B>
 FileManager<B>::FileManager(const std::string& filePath, std::size_t allocatedBlocks) {
     if (std::filesystem::exists(filePath) && std::filesystem::is_regular_file(filePath)) {
-        fd = open(filePath.c_str(), O_RDWR); // TODO: check O_DIRECT (errno 9)
+        fd = open(filePath.c_str(), O_RDWR);// TODO: check O_DIRECT (errno 9)
         if (pread(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
             throw std::runtime_error("Invalid file!");
         }

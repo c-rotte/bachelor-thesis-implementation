@@ -12,23 +12,21 @@ template<class K, class V>
 class LRUQueue : public Queue<K, V> {
 
 public:
-    explicit LRUQueue(std::size_t);
+    LRUQueue() = default;
 
-    virtual V& find(const K&) override;
+    virtual V& find(const K&, bool) override;
 };
 // --------------------------------------------------------------------------
 template<class K, class V>
-LRUQueue<K, V>::LRUQueue(std::size_t maxEntries) : Queue<K, V>(maxEntries) {
-}
-// --------------------------------------------------------------------------
-template<class K, class V>
-V& LRUQueue<K, V>::find(const K& key) {
+V& LRUQueue<K, V>::find(const K& key, bool modify) {
     if (!this->contains(key)) {
         throw std::runtime_error("Key was not found! (LRU)");
     }
     auto it = this->pointerMap[key];
-    // move entry to the front
-    this->entryQueue.splice(this->entryQueue.begin(), this->entryQueue, it);
+    if (modify) {
+        // move entry to the front
+        this->entryQueue.splice(this->entryQueue.begin(), this->entryQueue, it);
+    }
     return it->second;
 }
 // --------------------------------------------------------------------------

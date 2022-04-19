@@ -3,7 +3,8 @@ set(TEST_SOURCES
         TesterUtils.cpp
         TestFileManager.cpp
         TestSegmentManager.cpp
-        TestQueue.cpp)
+        TestQueue.cpp
+        TestPageBuffer.cpp)
 
 add_clang_tidy_target(lint_tester_core ${TEST_SOURCES})
 add_dependencies(lint lint_tester_core)

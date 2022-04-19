@@ -10,11 +10,12 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
-#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <unistd.h>
 #include <unordered_set>
+#include <vector>
 // --------------------------------------------------------------------------
 namespace file {
 // --------------------------------------------------------------------------
@@ -41,6 +42,8 @@ private:
     Header header;
     int fd;
 
+    std::optional<std::vector<std::shared_mutex>> blockMutexes;
+
 public:
     FileManager() = delete;
     explicit FileManager(const std::string&, std::size_t = 0);
@@ -58,6 +61,8 @@ public:
 
     std::uint64_t createBlock();
     void deleteBlock(std::uint64_t);
+    void lockBlock(std::uint64_t);
+    void unlockBlock(std::uint64_t);
     std::array<unsigned char, B> readBlock(std::uint64_t);
     void writeBlock(std::uint64_t, std::array<unsigned char, B>);
 
@@ -93,6 +98,7 @@ FileManager<B>::FileManager(const std::string& filePath, std::size_t allocatedBl
             throw std::runtime_error("Could not increase the file size.");
         }
     }
+    blockMutexes = std::make_optional<std::vector<std::shared_mutex>>(header.allocatedBlocks);
 }
 // --------------------------------------------------------------------------
 template<std::uint64_t B>
@@ -168,8 +174,19 @@ void FileManager<B>::deleteBlock(std::uint64_t id) {
 }
 // --------------------------------------------------------------------------
 template<std::uint64_t B>
+void FileManager<B>::lockBlock(std::uint64_t id) {
+    blockMutexes->at(id).lock();
+}
+// --------------------------------------------------------------------------
+template<std::uint64_t B>
+void FileManager<B>::unlockBlock(std::uint64_t id) {
+    blockMutexes->at(id).unlock();
+}
+// --------------------------------------------------------------------------
+template<std::uint64_t B>
 std::array<unsigned char, B> FileManager<B>::readBlock(std::uint64_t id) {
     std::array<unsigned char, B> result;
+    std::shared_lock blockLock(blockMutexes->at(id));
     if (pread(fd, result.data(), B, HEADER_SIZE + id * B) != B) {
         throw std::runtime_error("Could not read the block.");
     }

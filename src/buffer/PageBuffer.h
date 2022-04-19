@@ -206,10 +206,13 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
             {
                 // lock the page (instant)
                 std::unique_lock pageLock(page.mutex);
+                // lock the saved block
+                segmentManager.lockBlock(removedEntry->first);
                 // unlock the queue
                 queueLock.unlock();
                 // evict the old page and load the new one
                 savePage(pageIndex);    // potential IO write
+                segmentManager.unlockBlock(removedEntry->first);
                 loadPage(id, pageIndex);// IO read
                 // unlock the page
             }
@@ -239,10 +242,13 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
             {
                 // lock the page (instant)
                 std::unique_lock pageLock(page.mutex);
+                // lock the saved block
+                segmentManager.lockBlock(removedEntry->first);
                 // unlock the queue
                 queueLock.unlock();
                 // evict the old page and load the new one
                 savePage(pageIndex);    // potential IO write
+                segmentManager.unlockBlock(removedEntry->first);
                 loadPage(id, pageIndex);// IO read
                 // unlock the page
             }

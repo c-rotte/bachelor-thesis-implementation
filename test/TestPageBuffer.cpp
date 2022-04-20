@@ -279,7 +279,6 @@ TEST(PageBuffer, MultiThreaded2) {
     constexpr size_t BLOCK_SIZE = 4096;
     constexpr size_t PAGE_AMOUNT = 100;
     PageBuffer<BLOCK_SIZE, PAGE_AMOUNT> pageBuffer(DIRNAME, 1.25);
-    mutex idsMutex;
     ThreadPool threadPool(32);
     vector<future<void>> calls;
     {
@@ -393,7 +392,7 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
     auto search = [&traverse](int value) {
         bool found;
         traverse(
-                value, [value, &found](Node& node) {
+                value, [&found](Node& node) {
                     if (node.value == -1) {
                         found = false;
                     } else {
@@ -448,7 +447,6 @@ TEST(PageBuffer, DeleteMultiThreaded) {
     constexpr size_t BLOCK_SIZE = 4096;
     constexpr size_t PAGE_AMOUNT = 100;
     PageBuffer<BLOCK_SIZE, PAGE_AMOUNT> pageBuffer(DIRNAME, 1.25);
-    mutex idsMutex;
     ThreadPool threadPool(32);
     vector<future<void>> calls;
     {

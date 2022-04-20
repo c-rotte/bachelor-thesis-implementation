@@ -47,7 +47,7 @@ TEST(SegmentManager, StoreMultiThreaded) {
     ThreadPool threadPool(32);
     vector<future<void>> calls;
     for (int i = 0; i < 1000; i++) {
-        calls.emplace_back(threadPool.enqueue([i, &segmentManager]() {
+        calls.emplace_back(threadPool.enqueue([&segmentManager]() {
             size_t id = segmentManager.createBlock();
             for (int j = 0; j < 1000; j++) {
                 array<unsigned char, BLOCK_SIZE> arr;

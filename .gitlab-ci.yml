@@ -17,12 +17,11 @@ run_tests:
   tags:
     - cmake
 
-lint_btree:
-  script:
-    - mkdir ci_lint_implementation
-    - cd ci_lint_implementation
-    - cmake -DCMAKE_BUILD_TYPE=Release ..
-    - make lint
-  tags:
-    - cmake
-#    - clang-tidy-12
+#lint_btree:
+#  script:
+#    - mkdir ci_lint_implementation
+#    - cd ci_lint_implementation
+#    - cmake -DCMAKE_BUILD_TYPE=Release ..
+#    - make lint
+#  tags:
+#    - cmake

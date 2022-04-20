@@ -1,6 +1,7 @@
 #ifndef B_EPSILON_PAGEBUFFER_H
 #define B_EPSILON_PAGEBUFFER_H
 // --------------------------------------------------------------------------
+#include "lock/LockSet.h"
 #include "queue/FIFOQueue.h"
 #include "queue/LRUQueue.h"
 #include "src/file/SegmentManager.h"
@@ -44,6 +45,8 @@ private:
     queue::LRUQueue<std::uint64_t, std::size_t> lruQueue;  // id -> index
     mutable std::shared_mutex queueMutex;
 
+    lock::LockSet<std::uint64_t> evictionLockSet;
+
 public:
     PageBuffer() = delete;
     PageBuffer(const std::string&, double);
@@ -68,7 +71,7 @@ public:
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 PageBuffer<B, N>::PageBuffer(const std::string& path, double growthFactor)
-    : segmentManager(path, growthFactor), pages({}) {
+    : segmentManager(path, growthFactor) {
     for (std::size_t index = 0; index < N; index++) {
         freeSlots.insert(index);
     }
@@ -77,6 +80,8 @@ PageBuffer<B, N>::PageBuffer(const std::string& path, double growthFactor)
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::loadPage(std::uint64_t id, std::size_t index) {
     auto& page = pages[index];
+    // wait for the IO write if the page has just been evicted
+    evictionLockSet.wait(id);
     page.data = std::move(segmentManager.readBlock(id));// IO read
     page.id = id;
 }
@@ -207,12 +212,12 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                 // lock the page (instant)
                 std::unique_lock pageLock(page.mutex);
                 // lock the saved block
-                segmentManager.lockBlock(removedEntry->first);
+                evictionLockSet.lock(removedEntry->first);
                 // unlock the queue
                 queueLock.unlock();
                 // evict the old page and load the new one
-                savePage(pageIndex);    // potential IO write
-                segmentManager.unlockBlock(removedEntry->first);
+                savePage(pageIndex);// potential IO write
+                evictionLockSet.unlock(removedEntry->first);
                 loadPage(id, pageIndex);// IO read
                 // unlock the page
             }
@@ -243,12 +248,12 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                 // lock the page (instant)
                 std::unique_lock pageLock(page.mutex);
                 // lock the saved block
-                segmentManager.lockBlock(removedEntry->first);
+                evictionLockSet.lock(removedEntry->first);
                 // unlock the queue
                 queueLock.unlock();
                 // evict the old page and load the new one
-                savePage(pageIndex);    // potential IO write
-                segmentManager.unlockBlock(removedEntry->first);
+                savePage(pageIndex);// potential IO write
+                evictionLockSet.unlock(removedEntry->first);
                 loadPage(id, pageIndex);// IO read
                 // unlock the page
             }

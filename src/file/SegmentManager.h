@@ -31,12 +31,12 @@ class SegmentManager {
         const std::size_t allocatedBlocks;
 
     private:
-        std::mutex mutex;
+        std::shared_mutex mutex;
         std::optional<FileManager<B>> fileManager;
 
     public:
         Segment(const std::string&, std::size_t = 0);
-        void accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::mutex&)>);
+        void accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::shared_mutex&)>);
     };
 
     // wrap the segment into a unique pointer to keep
@@ -79,7 +79,7 @@ SegmentManager<B>::Segment::Segment(const std::string& filePath, std::size_t all
 }
 // --------------------------------------------------------------------------
 template<std::size_t B>
-void SegmentManager<B>::Segment::accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::mutex&)> func) {
+void SegmentManager<B>::Segment::accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::shared_mutex&)> func) {
     // the caller is responsible for initializing + locking the fileManager
     func(fileManager, mutex);
 }
@@ -99,7 +99,7 @@ SegmentManager<B>::SegmentManager(const std::string& dirPath, double growthFacto
             auto& segment = *segmentPtr;
             segments.push_back(std::move(segmentPtr));
             // note: initializes the fileManager
-            segment.accessFileManager([this, &segment, i](std::optional<FileManager<B>>& fileManager, std::mutex&) {
+            segment.accessFileManager([this, &segment, i](std::optional<FileManager<B>>& fileManager, std::shared_mutex&) {
                 // no need to lock since we are still in a single thread (constructor)
                 // initialize the file manager
                 fileManager = FileManager<B>(segment.filePath, segment.allocatedBlocks);
@@ -150,10 +150,10 @@ std::uint64_t SegmentManager<B>::createBlock() {
         // now access the segment
         std::size_t blockID;
         segment.accessFileManager([this, &segment, &mainLock, &blockID, segmentIndex](
-                                          std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
+                                          std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
             assert(!fileManager);
             // lock the segment
-            std::scoped_lock segmentLock(segmentMutex);
+            std::unique_lock segmentLock(segmentMutex);
             // mark the segment as free
             freeSegments.insert(segmentIndex);// only operation which needs both locks
             // unlock the segment manager
@@ -170,9 +170,9 @@ std::uint64_t SegmentManager<B>::createBlock() {
     auto& segment = *segments.at(segmentIndex);
     std::size_t blockID;
     segment.accessFileManager([this, &mainLock, segmentIndex, &blockID](
-                                      std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
+                                      std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
         // lock the segment
-        std::scoped_lock segmentLock(segmentMutex);
+        std::unique_lock segmentLock(segmentMutex);
         assert(fileManager);
         assert(fileManager->freeBlocks() > 0);
         if (fileManager->freeBlocks() == 1) {
@@ -197,9 +197,9 @@ void SegmentManager<B>::deleteBlock(std::uint64_t id) {
     auto& segment = segments.at(segmentIndex);
     // access the segment
     segment->accessFileManager([this, &mainLock, blockID, segmentIndex](
-                                       std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
+                                       std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
         // lock the segment
-        std::scoped_lock segmentLock(segmentMutex);
+        std::unique_lock segmentLock(segmentMutex);
         assert(fileManager);
         // mark the segment as free
         freeSegments.insert(segmentIndex);// only operation which needs both locks
@@ -222,10 +222,10 @@ std::array<unsigned char, B> SegmentManager<B>::readBlock(std::uint64_t id) {
     mainLock.unlock();
     std::optional<std::array<unsigned char, B>> result;
     segment.accessFileManager([this, &mainLock, &result, blockID](
-                                      std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
+                                      std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
         if (!fileManager) {
             // the fileManager has not been initialized -> wait until it has
-            std::unique_lock segmentLock(segmentMutex);
+            std::shared_lock segmentLock(segmentMutex);
         }
         assert(fileManager);
         result = fileManager->readBlock(blockID);
@@ -243,10 +243,10 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
     // unlock the segment manager
     mainLock.unlock();
     segment.accessFileManager([this, &mainLock, data = std::move(data), blockID](
-                                      std::optional<FileManager<B>>& fileManager, std::mutex& segmentMutex) {
+                                      std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
         if (!fileManager) {
             // the fileManager has not been initialized -> wait until it has
-            std::unique_lock segmentLock(segmentMutex);
+            std::shared_lock segmentLock(segmentMutex);
         }
         assert(fileManager);
         fileManager->writeBlock(blockID, std::move(data));
@@ -256,7 +256,7 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
 template<std::size_t B>
 void SegmentManager<B>::flush() {
     for (auto& segment: segments) {
-        segment->accessFileManager([](std::optional<FileManager<B>>& fileManager, std::mutex&) {
+        segment->accessFileManager([](std::optional<FileManager<B>>& fileManager, std::shared_mutex&) {
             assert(fileManager);
             fileManager->flush();
         });

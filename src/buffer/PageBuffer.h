@@ -128,79 +128,51 @@ void PageBuffer<B, N>::deletePage(std::uint64_t id) {
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
-    // lock the queue
-    std::unique_lock queueLock(queueMutex);
-    assert(lruQueue.size() + fifoQueue.size() <= N);
-    if (lruQueue.contains(id)) {
-        assert(!fifoQueue.contains(id));
-        // page is in memory (LRU)
-        std::size_t pageIndex = lruQueue.find(id, true);
-        auto& page = pages[pageIndex];
-        ++page.pins;
-        // unlock the queue
-        queueLock.unlock();
-        // lock the page
-        if (exclusive) {
-            page.mutex.lock();
-        } else {
-            page.mutex.lock_shared();
-        }
-        return page;
-    }
-    if (fifoQueue.contains(id)) {
-        // page is in memory (FIFO) -> move to LRU
-        std::size_t pageIndex = fifoQueue.remove(id).second;
-        lruQueue.insert(id, pageIndex);
-        auto& page = pages[pageIndex];
-        ++page.pins;
-        // unlock the queue
-        queueLock.unlock();
-        // lock the page
-        if (exclusive) {
-            page.mutex.lock();
-        } else {
-            page.mutex.lock_shared();
-        }
-        return page;
-    }
-    if (lruQueue.size() + fifoQueue.size() < N) {
-        assert(!freeSlots.empty());
-        // buffer is not full -> get a free index and load it into the FIFO queue
-        std::size_t freeIndex = *freeSlots.begin();
-        freeSlots.erase(freeIndex);
-        fifoQueue.insert(id, freeIndex);
-        auto& page = pages[freeIndex];
-        assert(page.pins == 0);
-        page.pins = 1;// set page to pinned
-        {
-            // lock the page (instant)
-            std::unique_lock pageLock(page.mutex);
+    bool retry;
+    do {
+        retry = false;
+        // lock the queue
+        std::unique_lock queueLock(queueMutex);
+        assert(lruQueue.size() + fifoQueue.size() <= N);
+        if (lruQueue.contains(id)) {
+            assert(!fifoQueue.contains(id));
+            // page is in memory (LRU)
+            std::size_t pageIndex = lruQueue.find(id, true);
+            auto& page = pages[pageIndex];
+            ++page.pins;
             // unlock the queue
             queueLock.unlock();
-            // load the page + unlock
-            loadPage(id, freeIndex);// IO read
-            // unlock the page
+            // lock the page
+            if (exclusive) {
+                page.mutex.lock();
+            } else {
+                page.mutex.lock_shared();
+            }
+            return page;
         }
-        // lock the page again
-        if (exclusive) {
-            page.mutex.lock();
-        } else {
-            page.mutex.lock_shared();
-        }
-        return page;
-    }
-    {
-        assert(lruQueue.size() + fifoQueue.size() == N);
-        // buffer is full -> find a free slot in the FIFO queue
-        auto removedEntry = fifoQueue.removeOne([this](const std::size_t& index) {
-            return pages[index].pins == 0;
-        });
-        if (removedEntry) {
-            std::size_t pageIndex = removedEntry->second;
-            // store the index in the FIFO queue
-            fifoQueue.insert(id, pageIndex);
-            // load the new one
+        if (fifoQueue.contains(id)) {
+            // page is in memory (FIFO) -> move to LRU
+            std::size_t pageIndex = fifoQueue.remove(id).second;
+            lruQueue.insert(id, pageIndex);
             auto& page = pages[pageIndex];
+            ++page.pins;
+            // unlock the queue
+            queueLock.unlock();
+            // lock the page
+            if (exclusive) {
+                page.mutex.lock();
+            } else {
+                page.mutex.lock_shared();
+            }
+            return page;
+        }
+        if (lruQueue.size() + fifoQueue.size() < N) {
+            assert(!freeSlots.empty());
+            // buffer is not full -> get a free index and load it into the FIFO queue
+            std::size_t freeIndex = *freeSlots.begin();
+            freeSlots.erase(freeIndex);
+            fifoQueue.insert(id, freeIndex);
+            auto& page = pages[freeIndex];
             assert(page.pins == 0);
             page.pins = 1;// set page to pinned
             {
@@ -208,9 +180,8 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                 std::unique_lock pageLock(page.mutex);
                 // unlock the queue
                 queueLock.unlock();
-                // evict the old page and load the new one
-                savePage(pageIndex);    // potential IO write
-                loadPage(id, pageIndex);// IO read
+                // load the page + unlock
+                loadPage(id, freeIndex);// IO read
                 // unlock the page
             }
             // lock the page again
@@ -221,40 +192,119 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
             }
             return page;
         }
-    }
-    {
-        assert(lruQueue.size() + fifoQueue.size() == N);
-        // buffer is full -> find a free slot in the LRU queue
-        auto removedEntry = lruQueue.removeOne([this](const std::size_t& index) {
-            return pages[index].pins == 0;
-        });
-        if (removedEntry) {
-            std::size_t pageIndex = removedEntry->second;
-            // store the index in the FIFO queue
-            fifoQueue.insert(id, pageIndex);
-            // load the new one
-            auto& page = pages[pageIndex];
-            assert(page.pins == 0);
-            page.pins = 1;// set page to pinned
-            {
-                // lock the page (instant)
-                std::unique_lock pageLock(page.mutex);
+        {
+            assert(lruQueue.size() + fifoQueue.size() == N);
+            // buffer is full -> find a free slot in the FIFO queue
+            auto emptyKey = fifoQueue.findOne([this](const std::size_t& index) {
+                return pages[index].pins == 0;
+            });
+            if (emptyKey) {
+                std::size_t pageIndex = fifoQueue.find(*emptyKey, false);
+                // load the page
+                auto& page = pages[pageIndex];
+                assert(page.pins == 0);
+                page.pins = 1;// set page to pinned
+                {
+                    if (page.dirty) {
+                        // lock the page (instant)
+                        std::shared_lock pageLock(page.mutex);
+                        // unlock the queue
+                        queueLock.unlock();
+                        // evict the old page
+                        savePage(pageIndex);// potential IO write
+                        // unlock the page
+                        pageLock.unlock();
+                        // re-lock the queue
+                        queueLock.lock();
+                    }// unlock the page
+                }
+                if (!fifoQueue.contains(id) && !lruQueue.contains(id) && fifoQueue.contains(*emptyKey) && page.pins == 1) {
+                    // the page was not accessed -> we can evict it and use it
+                    fifoQueue.remove(*emptyKey);
+                    // store the index in the FIFO queue
+                    fifoQueue.insert(id, pageIndex);
+                    {
+                        // lock the page (instant because we have the only pin)
+                        std::unique_lock pageLock(page.mutex);
+                        // unlock the queue
+                        queueLock.unlock();
+                        // load the new page
+                        loadPage(id, pageIndex);
+                        // unlock the page
+                    }
+                    // lock the page again
+                    if (exclusive) {
+                        page.mutex.lock();
+                    } else {
+                        page.mutex.lock_shared();
+                    }
+                    return page;
+                }
+                // we can't use this page -> unpin it
+                --page.pins;
                 // unlock the queue
                 queueLock.unlock();
-                // evict the old page and load the new one
-                savePage(pageIndex);    // potential IO write
-                loadPage(id, pageIndex);// IO read
-                // unlock the page
+                retry = true;// try again
+                continue;
             }
-            // lock the page again
-            if (exclusive) {
-                page.mutex.lock();
-            } else {
-                page.mutex.lock_shared();
-            }
-            return page;
         }
-    }
+        {
+            assert(lruQueue.size() + fifoQueue.size() == N);
+            // buffer is full -> find a free slot in the FIFO queue
+            auto emptyKey = lruQueue.findOne([this](const std::size_t& index) {
+                return pages[index].pins == 0;
+            });
+            if (emptyKey) {
+                std::size_t pageIndex = lruQueue.find(*emptyKey, false);
+                // load the page
+                auto& page = pages[pageIndex];
+                assert(page.pins == 0);
+                page.pins = 1;// set page to pinned
+                {
+                    if (page.dirty) {
+                        // lock the page (instant)
+                        std::shared_lock pageLock(page.mutex);
+                        // unlock the queue
+                        queueLock.unlock();
+                        // evict the old page
+                        savePage(pageIndex);// potential IO write
+                        // unlock the page
+                        pageLock.unlock();
+                        // re-lock the queue
+                        queueLock.lock();
+                    }// unlock the page
+                }
+                if (!fifoQueue.contains(id) && !lruQueue.contains(id) && lruQueue.contains(*emptyKey) && page.pins == 1) {
+                    // the page was not accessed -> we can evict it and use it
+                    lruQueue.remove(*emptyKey);
+                    // store the index in the FIFO queue
+                    lruQueue.insert(id, pageIndex);
+                    {
+                        // lock the page (instant because we have the only pin)
+                        std::unique_lock pageLock(page.mutex);
+                        // unlock the queue
+                        queueLock.unlock();
+                        // load the new page
+                        loadPage(id, pageIndex);
+                        // unlock the page
+                    }
+                    // lock the page again
+                    if (exclusive) {
+                        page.mutex.lock();
+                    } else {
+                        page.mutex.lock_shared();
+                    }
+                    return page;
+                }
+                // we can't use this page -> unpin it
+                --page.pins;
+                // unlock the queue
+                queueLock.unlock();
+                retry = true;// try again
+                continue;
+            }
+        }
+    } while (retry);
     throw std::runtime_error("Buffer is full!");// unlock the queue
 }
 // --------------------------------------------------------------------------

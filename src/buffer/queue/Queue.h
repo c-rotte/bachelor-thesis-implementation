@@ -36,7 +36,7 @@ public:
     // inserts Entry(K, V)
     void insert(K, V);
     Entry<K, V> remove(const K&);
-    std::optional<Entry<K, V>> removeOne(std::function<bool(const V&)>);
+    std::optional<K> findOne(std::function<bool(const V&)>);
     bool contains(const K&) const;
     virtual V& find(const K&, bool) = 0;
 };
@@ -74,19 +74,17 @@ Entry<K, V> Queue<K, V>::remove(const K& key) {
 }
 // --------------------------------------------------------------------------
 template<class K, class V>
-std::optional<Entry<K, V>> Queue<K, V>::removeOne(std::function<bool(const V&)> predicate) {
-    std::optional<Entry<K, V>> removedEntry = std::nullopt;
+std::optional<K> Queue<K, V>::findOne(std::function<bool(const V&)> predicate) {
+    std::optional<K> result = std::nullopt;
     // queue -> iterate until we find a fitting entry to remove
     for (auto it = entryQueue.rbegin(); it != entryQueue.rend(); ++it) {
         if (predicate(it->second)) {
             // remove the entry
-            removedEntry = std::move(*it);
-            entryQueue.erase(std::next(it).base());
-            pointerMap.erase(removedEntry->first);
+            result = it->first;
             break;
         }
     }
-    return removedEntry;
+    return result;
 }
 // --------------------------------------------------------------------------
 template<class K, class V>

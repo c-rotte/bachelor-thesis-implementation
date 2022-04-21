@@ -312,7 +312,7 @@ TEST(PageBuffer, MultiThreaded2) {
 TEST(PageBuffer, BinaryTreeMultiThreaded) {
     setup();
     constexpr size_t BLOCK_SIZE = 4096;
-    constexpr size_t PAGE_AMOUNT = 64;
+    constexpr size_t PAGE_AMOUNT = 64;// 32 threads -> coupling takes 2 pages at once -> 64 should be enough
     PageBuffer<BLOCK_SIZE, PAGE_AMOUNT> pageBuffer(DIRNAME, 1.25);
     struct Node {
         int value = -1;
@@ -345,7 +345,6 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
                     auto* leftPage = &pageBuffer.pinPage(leftID, exclusiveCoupling);
                     pageBuffer.unpinPage(parentID, false);
                     parentID = leftID;
-                    page = leftPage;
                     parentNode = reinterpret_cast<Node*>(leftPage->data.data());
                     func(*parentNode);
                 } else {
@@ -354,7 +353,6 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
                     parentNode->left = leftID;
                     pageBuffer.unpinPage(parentID, false);
                     parentID = leftID;
-                    page = leftPage;
                     parentNode = reinterpret_cast<Node*>(leftPage->data.data());
                     func(*parentNode);
                     break;
@@ -365,7 +363,6 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
                     auto* rightPage = &pageBuffer.pinPage(rightID, exclusiveCoupling);
                     pageBuffer.unpinPage(parentID, false);
                     parentID = rightID;
-                    page = rightPage;
                     parentNode = reinterpret_cast<Node*>(rightPage->data.data());
                     func(*parentNode);
                 } else {
@@ -374,7 +371,6 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
                     parentNode->right = rightID;
                     pageBuffer.unpinPage(parentID, false);
                     parentID = rightID;
-                    page = rightPage;
                     parentNode = reinterpret_cast<Node*>(rightPage->data.data());
                     func(*parentNode);
                     break;
@@ -405,6 +401,7 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
     };
     ThreadPool threadPool(32);
     {
+        atomic_int operations = 0;
         vector<future<void>> calls;
         vector<int> ints(1000);
         iota(ints.begin(), ints.end(), 0);// fill with 0..999
@@ -414,32 +411,38 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
             if (i == 500) {
                 continue;
             }
-            calls.emplace_back(threadPool.enqueue([i, &insert]() {
+            calls.emplace_back(threadPool.enqueue([i, &insert, &operations]() {
                 insert(i);
+                operations++;
             }));
-            calls.emplace_back(threadPool.enqueue([i, &search]() {
+            calls.emplace_back(threadPool.enqueue([i, &search, &operations]() {
                 ASSERT_TRUE(search(i));
+                operations++;
             }));
         }
         for (auto& call: calls) {
             call.get();
         }
         calls.clear();
+        ASSERT_EQ(operations, 1998);
     }
     {
+        atomic_int operations = 0;
         vector<future<void>> calls;
         for (int i = 0; i < 1000; i++) {
             if (i == 500) {
                 continue;
             }
-            calls.emplace_back(threadPool.enqueue([i, &search]() {
+            calls.emplace_back(threadPool.enqueue([i, &search, &operations]() {
                 ASSERT_TRUE(search(i));
+                operations++;
             }));
         }
         for (auto& call: calls) {
             call.get();
         }
         calls.clear();
+        ASSERT_EQ(operations, 999);
     }
 }
 // --------------------------------------------------------------------------

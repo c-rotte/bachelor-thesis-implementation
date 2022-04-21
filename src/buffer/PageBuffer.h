@@ -68,7 +68,7 @@ public:
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 PageBuffer<B, N>::PageBuffer(const std::string& path, double growthFactor)
-    : segmentManager(path, growthFactor), pages({}) {
+    : segmentManager(path, growthFactor), pages() {
     for (std::size_t index = 0; index < N; index++) {
         freeSlots.insert(index);
     }
@@ -84,10 +84,6 @@ void PageBuffer<B, N>::loadPage(std::uint64_t id, std::size_t index) {
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::savePage(std::size_t index) {
     auto& page = pages[index];
-    if (!page.dirty) {
-        // page is not dirty -> nothing to do
-        return;
-    }
     // don't move the array to keep the page in memory valid
     segmentManager.writeBlock(page.id, page.data);// IO write
 }
@@ -206,12 +202,14 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                 page.pins = 1;// set page to pinned
                 {
                     if (page.dirty) {
+                        // mark the page as clean since we write it to disk
+                        page.dirty = false;
                         // lock the page (instant)
                         std::shared_lock pageLock(page.mutex);
                         // unlock the queue
                         queueLock.unlock();
                         // evict the old page
-                        savePage(pageIndex);// potential IO write
+                        savePage(pageIndex);// IO write
                         // unlock the page
                         pageLock.unlock();
                         // re-lock the queue
@@ -262,12 +260,14 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                 page.pins = 1;// set page to pinned
                 {
                     if (page.dirty) {
+                        // mark the page as clean since we write it to disk
+                        page.dirty = false;
                         // lock the page (instant)
                         std::shared_lock pageLock(page.mutex);
                         // unlock the queue
                         queueLock.unlock();
                         // evict the old page
-                        savePage(pageIndex);// potential IO write
+                        savePage(pageIndex);// IO write
                         // unlock the page
                         pageLock.unlock();
                         // re-lock the queue

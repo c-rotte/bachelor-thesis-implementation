@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cinttypes>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <shared_mutex>
 #include <string>
@@ -21,7 +22,7 @@ class PageBuffer;
 template<std::size_t B>
 struct Page {
     alignas(alignof(std::max_align_t)) std::array<unsigned char, B> data = {};
-    std::uint64_t id;
+    std::uint64_t id = -1;
 
 private:
     std::shared_mutex mutex;
@@ -79,6 +80,7 @@ void PageBuffer<B, N>::loadPage(std::uint64_t id, std::size_t index) {
     auto& page = pages[index];
     page.data = std::move(segmentManager.readBlock(id));// IO read
     page.id = id;
+    page.dirty = false;
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
@@ -216,7 +218,10 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                         queueLock.lock();
                     }// unlock the page
                 }
-                if (!fifoQueue.contains(id) && !lruQueue.contains(id) && fifoQueue.contains(*emptyKey) && page.pins == 1) {
+                if (!fifoQueue.contains(id) &&
+                    !lruQueue.contains(id) &&
+                    fifoQueue.contains(*emptyKey) &&
+                    page.pins == 1 && !page.dirty) {
                     // the page was not accessed -> we can evict it and use it
                     fifoQueue.remove(*emptyKey);
                     // store the index in the FIFO queue
@@ -274,7 +279,10 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                         queueLock.lock();
                     }// unlock the page
                 }
-                if (!fifoQueue.contains(id) && !lruQueue.contains(id) && lruQueue.contains(*emptyKey) && page.pins == 1) {
+                if (!fifoQueue.contains(id) &&
+                    !lruQueue.contains(id) &&
+                    lruQueue.contains(*emptyKey) &&
+                    page.pins == 1 && !page.dirty) {
                     // the page was not accessed -> we can evict it and use it
                     lruQueue.remove(*emptyKey);
                     // store the index in the FIFO queue
@@ -317,7 +325,7 @@ void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
         auto& page = pages[index];
         page.mutex.unlock();// release the page lock
         if (dirty) {
-            page.dirty = dirty;// set page to dirty
+            page.dirty = true;// set page to dirty
         }
         assert(page.pins >= 1);
         --page.pins;// set page to unpinned
@@ -328,7 +336,7 @@ void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
         auto& page = pages[index];
         page.mutex.unlock();// release the page lock
         if (dirty) {
-            page.dirty = dirty;// set page to dirty
+            page.dirty = true;// set page to dirty
         }
         assert(page.pins >= 1);
         --page.pins;// set page to unpinned
@@ -341,7 +349,10 @@ template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::flush() {
     for (std::size_t index = 0; index < N; index++) {
         if (!freeSlots.contains(index)) {
-            savePage(index);
+            auto& page = pages[index];
+            if (page.dirty) {
+                savePage(index);
+            }
         }
     }
     segmentManager.flush();

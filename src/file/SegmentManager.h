@@ -35,7 +35,7 @@ class SegmentManager {
         std::optional<FileManager<B>> fileManager;
 
     public:
-        Segment(const std::string&, std::size_t = 0);
+        explicit Segment(const std::string&, std::size_t = 0);
         void accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::shared_mutex&)>);
     };
 

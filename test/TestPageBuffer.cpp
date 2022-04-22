@@ -2,14 +2,17 @@
 // --------------------------------------------------------------------------
 #include "external/ThreadPool.h"
 #include "src/buffer/PageBuffer.h"
+#include "utils/SimpleBinaryTree.h"
 #include <algorithm>
 #include <filesystem>
+#include <new>
 #include <random>
 #include <ranges>
 #include <unordered_set>
 // --------------------------------------------------------------------------
 using namespace std;
 using namespace buffer;
+using namespace utils;
 // --------------------------------------------------------------------------
 namespace {
 // --------------------------------------------------------------------------
@@ -311,112 +314,22 @@ TEST(PageBuffer, MultiThreaded2) {
 // --------------------------------------------------------------------------
 TEST(PageBuffer, BinaryTreeMultiThreaded) {
     setup();
-    constexpr size_t BLOCK_SIZE = 4096;
-    constexpr size_t PAGE_AMOUNT = 64;// 32 threads -> coupling takes 2 pages at once -> 64 should be enough
-    PageBuffer<BLOCK_SIZE, PAGE_AMOUNT> pageBuffer(DIRNAME, 1.25);
-    struct Node {
-        int value = -1;
-        optional<uint64_t> left = nullopt;
-        optional<uint64_t> right = nullopt;
-    };
-    // create the root node
-    uint64_t rootID = pageBuffer.createPage();
-    {
-        Node rootNode{500};
-        auto& page = pageBuffer.pinPage(rootID, true);
-        memcpy(page.data.data(), reinterpret_cast<Node*>(&rootNode), sizeof(Node));
-        pageBuffer.unpinPage(rootID, true);
-    }
-    auto traverse = [rootID, &pageBuffer](
-                            int value,
-                            function<void(Node&)> func,
-                            bool exclusiveCoupling) {
-        uint64_t parentID = rootID;
-        auto* page = &pageBuffer.pinPage(parentID, exclusiveCoupling);
-        Node* parentNode = reinterpret_cast<Node*>(page->data.data());
-        func(*parentNode);
-        while (true) {
-            if (value <= parentNode->value) {
-                if (value == parentNode->value) {
-                    func(*parentNode);
-                }
-                if (parentNode->left) {
-                    uint64_t leftID = *parentNode->left;
-                    auto* leftPage = &pageBuffer.pinPage(leftID, exclusiveCoupling);
-                    pageBuffer.unpinPage(parentID, false);
-                    parentID = leftID;
-                    parentNode = reinterpret_cast<Node*>(leftPage->data.data());
-                    func(*parentNode);
-                } else {
-                    uint64_t leftID = pageBuffer.createPage();
-                    auto* leftPage = &pageBuffer.pinPage(leftID, exclusiveCoupling);
-                    parentNode->left = leftID;
-                    pageBuffer.unpinPage(parentID, false);
-                    parentID = leftID;
-                    parentNode = reinterpret_cast<Node*>(leftPage->data.data());
-                    func(*parentNode);
-                    break;
-                }
-            } else {
-                if (parentNode->right) {
-                    uint64_t rightID = *parentNode->right;
-                    auto* rightPage = &pageBuffer.pinPage(rightID, exclusiveCoupling);
-                    pageBuffer.unpinPage(parentID, false);
-                    parentID = rightID;
-                    parentNode = reinterpret_cast<Node*>(rightPage->data.data());
-                    func(*parentNode);
-                } else {
-                    uint64_t rightID = pageBuffer.createPage();
-                    auto* rightPage = &pageBuffer.pinPage(rightID, exclusiveCoupling);
-                    parentNode->right = rightID;
-                    pageBuffer.unpinPage(parentID, false);
-                    parentID = rightID;
-                    parentNode = reinterpret_cast<Node*>(rightPage->data.data());
-                    func(*parentNode);
-                    break;
-                }
-            }
-        }
-        pageBuffer.unpinPage(parentID, exclusiveCoupling);
-    };
-    auto insert = [&traverse](int value) {
-        traverse(
-                value, [value](Node& node) {
-                    node.value = value;
-                },
-                true);
-    };
-    auto search = [&traverse](int value) {
-        bool found;
-        traverse(
-                value, [value, &found](Node& node) {
-                    if (node.value == -1) {
-                        found = false;
-                    } else {
-                        found = true;
-                    }
-                },
-                false);
-        return found;
-    };
+    SimpleBinaryTree binaryTree(DIRNAME);
     ThreadPool threadPool(32);
     {
         atomic_int operations = 0;
         vector<future<void>> calls;
         vector<int> ints(1000);
-        iota(ints.begin(), ints.end(), 0);// fill with 0..999
+        iota(ints.begin(), ints.end(), -500);// fill with -500..499
         // shuffle the values to balance the tree
         shuffle(ints.begin(), ints.end(), default_random_engine());
         for (int i: ints) {
-            if (i == 500) {
+            if (i == 0) {
                 continue;
             }
-            calls.emplace_back(threadPool.enqueue([i, &insert, &operations]() {
-                insert(i);
-                operations++;
-            }));
-            calls.emplace_back(threadPool.enqueue([i, &search, &operations]() {
-                ASSERT_TRUE(search(i));
+            calls.emplace_back(threadPool.enqueue([i, &binaryTree, &operations]() {
+                binaryTree.insert(i);
+                ASSERT_TRUE(binaryTree.search(i));
                 operations++;
             }));
         }
@@ -424,17 +337,17 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
             call.get();
         }
         calls.clear();
-        ASSERT_EQ(operations, 1998);
+        ASSERT_EQ(operations, 999);
     }
     {
         atomic_int operations = 0;
         vector<future<void>> calls;
-        for (int i = 0; i < 1000; i++) {
-            if (i == 500) {
+        for (int i = -500; i < 500; i++) {
+            if (i == 0) {
                 continue;
             }
-            calls.emplace_back(threadPool.enqueue([i, &search, &operations]() {
-                ASSERT_TRUE(search(i));
+            calls.emplace_back(threadPool.enqueue([i, &binaryTree, &operations]() {
+                ASSERT_TRUE(binaryTree.search(i));
                 operations++;
             }));
         }

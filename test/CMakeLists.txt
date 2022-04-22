@@ -4,7 +4,8 @@ set(TEST_SOURCES
         TestFileManager.cpp
         TestSegmentManager.cpp
         TestQueue.cpp
-        TestPageBuffer.cpp)
+        TestPageBuffer.cpp
+        utils/SimpleBinaryTree.cpp)
 
 add_clang_tidy_target(lint_tester_core ${TEST_SOURCES})
 add_dependencies(lint lint_tester_core)

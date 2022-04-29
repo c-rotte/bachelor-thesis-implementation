@@ -3,7 +3,6 @@
 #include "external/ThreadPool.h"
 #include "src/buffer/PageBuffer.h"
 #include "utils/SimpleBinaryTree.h"
-#include <algorithm>
 #include <filesystem>
 #include <new>
 #include <random>
@@ -312,15 +311,15 @@ TEST(PageBuffer, MultiThreaded2) {
     }
 }
 // --------------------------------------------------------------------------
-TEST(PageBuffer, BinaryTreeMultiThreaded) {
+TEST(PageBuffer, BinaryTreeSingleThreaded) {
     setup();
-    SimpleBinaryTree binaryTree(DIRNAME);
-    ThreadPool threadPool(32);
+    SimpleBinaryTree binaryTree(DIRNAME, 1);// wraps around 64 pages
+    ThreadPool threadPool(1);
     {
         atomic_int operations = 0;
         vector<future<void>> calls;
-        vector<int> ints(1000);
-        iota(ints.begin(), ints.end(), -500);// fill with -500..499
+        vector<int> ints(10000);
+        iota(ints.begin(), ints.end(), -5000);// fill with -5000..4999
         // shuffle the values to balance the tree
         shuffle(ints.begin(), ints.end(), default_random_engine());
         for (int i: ints) {
@@ -337,12 +336,12 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
             call.get();
         }
         calls.clear();
-        ASSERT_EQ(operations, 999);
+        ASSERT_EQ(operations, 9999);
     }
     {
         atomic_int operations = 0;
         vector<future<void>> calls;
-        for (int i = -500; i < 500; i++) {
+        for (int i = -5000; i < 5000; i++) {
             if (i == 0) {
                 continue;
             }
@@ -355,7 +354,54 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
             call.get();
         }
         calls.clear();
-        ASSERT_EQ(operations, 999);
+        ASSERT_EQ(operations, 9999);
+    }
+}
+// --------------------------------------------------------------------------
+TEST(PageBuffer, BinaryTreeMultiThreaded) {
+    setup();
+    SimpleBinaryTree binaryTree(DIRNAME, 1);// wraps around 64 pages
+    ThreadPool threadPool(32);
+    {
+        atomic_int operations = 0;
+        vector<future<void>> calls;
+        vector<int> ints(10000);
+        iota(ints.begin(), ints.end(), -5000);// fill with -5000..4999
+        // shuffle the values to balance the tree
+        shuffle(ints.begin(), ints.end(), default_random_engine());
+        for (int i: ints) {
+            if (i == 0) {
+                continue;
+            }
+            calls.emplace_back(threadPool.enqueue([i, &binaryTree, &operations]() {
+                binaryTree.insert(i);
+                ASSERT_TRUE(binaryTree.search(i));
+                operations++;
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+        ASSERT_EQ(operations, 9999);
+    }
+    {
+        atomic_int operations = 0;
+        vector<future<void>> calls;
+        for (int i = -5000; i < 5000; i++) {
+            if (i == 0) {
+                continue;
+            }
+            calls.emplace_back(threadPool.enqueue([i, &binaryTree, &operations]() {
+                ASSERT_TRUE(binaryTree.search(i));
+                operations++;
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+        ASSERT_EQ(operations, 9999);
     }
 }
 // --------------------------------------------------------------------------
@@ -364,7 +410,6 @@ TEST(PageBuffer, DeleteMultiThreaded) {
     constexpr size_t BLOCK_SIZE = 4096;
     constexpr size_t PAGE_AMOUNT = 100;
     PageBuffer<BLOCK_SIZE, PAGE_AMOUNT> pageBuffer(DIRNAME, 1.25);
-    mutex idsMutex;
     ThreadPool threadPool(32);
     vector<future<void>> calls;
     {

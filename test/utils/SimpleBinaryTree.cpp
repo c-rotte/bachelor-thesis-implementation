@@ -1,12 +1,14 @@
 #include "SimpleBinaryTree.h"
 // --------------------------------------------------------------------------
+#include <chrono>
 #include <iostream>
 #include <new>
+#include <thread>
 // --------------------------------------------------------------------------
 namespace utils {
 // --------------------------------------------------------------------------
-SimpleBinaryTree::SimpleBinaryTree(const std::string& path)
-    : pageBuffer(path, 1.25) {
+SimpleBinaryTree::SimpleBinaryTree(const std::string& path, std::size_t slowDownUS)
+    : slowDownUS(slowDownUS), pageBuffer(path, 1.25) {
     rootID = pageBuffer.createPage();
     auto& rootPage = pageBuffer.pinPage(rootID, true);
     initializeNode(rootPage);
@@ -27,6 +29,7 @@ void SimpleBinaryTree::insert(int value) {
     assert(value != 0);
     auto* currentPage = &pageBuffer.pinPage(rootID, true);
     while (true) {
+        std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
         if (value <= *getNode(*currentPage).value) {
             if (getNode(*currentPage).leftID) {
                 auto* nextPage = &pageBuffer.pinPage(
@@ -67,6 +70,7 @@ bool SimpleBinaryTree::search(int value) {
     assert(value != 0);
     auto* currentPage = &pageBuffer.pinPage(rootID, true);
     while (true) {
+        std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
         if (value <= *getNode(*currentPage).value) {
             if (value == *getNode(*currentPage).value) {
                 pageBuffer.unpinPage(currentPage->id, false);

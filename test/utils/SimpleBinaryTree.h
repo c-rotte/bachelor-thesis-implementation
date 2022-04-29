@@ -16,11 +16,12 @@ class SimpleBinaryTree {
     };
 
 private:
+    std::size_t slowDownUS;
     buffer::PageBuffer<4096, 64> pageBuffer;
     std::uint64_t rootID;
 
 public:
-    explicit SimpleBinaryTree(const std::string&);
+    SimpleBinaryTree(const std::string&, std::size_t);
 
 private:
     void initializeNode(buffer::Page<4096>&) const;

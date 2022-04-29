@@ -221,7 +221,7 @@ std::array<unsigned char, B> SegmentManager<B>::readBlock(std::uint64_t id) {
     // unlock the segment manager
     mainLock.unlock();
     std::optional<std::array<unsigned char, B>> result;
-    segment.accessFileManager([this, &mainLock, &result, blockID](
+    segment.accessFileManager([&mainLock, &result, blockID](
                                       std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
         if (!fileManager) {
             // the fileManager has not been initialized -> wait until it has
@@ -242,7 +242,7 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
     auto& segment = *segments.at(segmentIndex);
     // unlock the segment manager
     mainLock.unlock();
-    segment.accessFileManager([this, &mainLock, data = std::move(data), blockID](
+    segment.accessFileManager([&mainLock, data = std::move(data), blockID](
                                       std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
         if (!fileManager) {
             // the fileManager has not been initialized -> wait until it has

@@ -44,14 +44,14 @@ TEST(PageBuffer, SingleThreaded) {
                 continue;
             }
             idSet.insert(id);
-            pageBuffer.pinPage(id, rand() % 2);
+            pageBuffer.pinPage(id, rand() % 2, true);
         }
         for (size_t id: idSet) {
             pageBuffer.unpinPage(id, rand() % 2);
         }
     }
     for (size_t id: ids) {
-        auto& page = pageBuffer.pinPage(id, rand() % 2);
+        auto& page = pageBuffer.pinPage(id, rand() % 2, true);
         ASSERT_EQ(page.id, id);
         page.data.fill(page.id % 256);
         pageBuffer.unpinPage(id, true);
@@ -103,14 +103,14 @@ TEST(PageBuffer, KeepDataSingleThreaded) {
                     continue;
                 }
                 idSet.insert(id);
-                pageBuffer.pinPage(id, rand() % 2);
+                pageBuffer.pinPage(id, rand() % 2, true);
             }
             for (size_t id: idSet) {
                 pageBuffer.unpinPage(id, rand() % 2);
             }
         }
         for (size_t id: ids) {
-            auto& page = pageBuffer.pinPage(id, rand() % 2);
+            auto& page = pageBuffer.pinPage(id, rand() % 2, true);
             ASSERT_EQ(page.id, id);
             page.data.fill(page.id % 256);
             pageBuffer.unpinPage(id, true);
@@ -161,7 +161,7 @@ TEST(PageBuffer, Full) {
         ids.push_back(id);
     }
     for (int i = 0; i < 100; i++) {
-        pageBuffer.pinPage(ids[i], rand() % 2);
+        pageBuffer.pinPage(ids[i], rand() % 2, true);
     }
     ASSERT_THROW(pageBuffer.pinPage(ids[100], rand() % 2), std::runtime_error);
 }
@@ -193,7 +193,7 @@ TEST(PageBuffer, MultiThreaded) {
     }
     for (size_t id: ids) {
         calls.emplace_back(threadPool.enqueue([id, &pageBuffer]() {
-            auto& page = pageBuffer.pinPage(id, true);
+            auto& page = pageBuffer.pinPage(id, true, true);
             ASSERT_EQ(page.id, id);
             page.data.fill(page.id % 256);
             pageBuffer.unpinPage(id, true);
@@ -289,7 +289,7 @@ TEST(PageBuffer, MultiThreaded2) {
             calls.emplace_back(threadPool.enqueue([&pageBuffer]() {
                 size_t id = pageBuffer.createPage();
                 {
-                    auto& page = pageBuffer.pinPage(id, true);
+                    auto& page = pageBuffer.pinPage(id, true, true);
                     ASSERT_EQ(page.id, id);
                     page.data.fill(id % 256);
                     pageBuffer.unpinPage(id, true);

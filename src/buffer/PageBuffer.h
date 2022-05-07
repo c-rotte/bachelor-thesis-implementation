@@ -58,7 +58,7 @@ private:
 public:
     std::uint64_t createPage();
     void deletePage(std::uint64_t);// assumes that the page is not pinned
-    Page<B>& pinPage(std::uint64_t, bool);
+    Page<B>& pinPage(std::uint64_t, bool, bool = false);
     void unpinPage(std::uint64_t, bool);
 
     void flush();// not thread-safe
@@ -79,8 +79,6 @@ template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::loadPage(std::uint64_t id, std::size_t index) {
     auto& page = pages[index];
     page.data = std::move(segmentManager.readBlock(id));// IO read
-    page.id = id;
-    page.dirty = false;
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
@@ -125,7 +123,7 @@ void PageBuffer<B, N>::deletePage(std::uint64_t id) {
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
-Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
+Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLoad) {
     bool retry;
     do {
         retry = false;
@@ -172,8 +170,15 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
             fifoQueue.insert(id, freeIndex);
             auto& page = pages[freeIndex];
             assert(page.pins == 0);
-            page.pins = 1;// set page to pinned
-            {
+            // set the metadata
+            page.pins = 1;
+            page.id = id;
+            page.dirty = false;
+            // load the page
+            if (skipLoad) {
+                // unlock the queue
+                queueLock.unlock();
+            } else {
                 // lock the page (instant)
                 std::unique_lock pageLock(page.mutex);
                 // unlock the queue
@@ -226,7 +231,13 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                     fifoQueue.remove(*emptyKey);
                     // store the index in the FIFO queue
                     fifoQueue.insert(id, pageIndex);
-                    {
+                    // set the metadata
+                    page.id = id;
+                    page.dirty = false;
+                    if (skipLoad) {
+                        // unlock the queue
+                        queueLock.unlock();
+                    } else {
                         // lock the page (instant because we have the only pin)
                         std::unique_lock pageLock(page.mutex);
                         // unlock the queue
@@ -287,7 +298,13 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive) {
                     lruQueue.remove(*emptyKey);
                     // store the index in the FIFO queue
                     lruQueue.insert(id, pageIndex);
-                    {
+                    // set the metadata
+                    page.id = id;
+                    page.dirty = false;
+                    if (skipLoad) {
+                        // unlock the queue
+                        queueLock.unlock();
+                    } else {
                         // lock the page (instant because we have the only pin)
                         std::unique_lock pageLock(page.mutex);
                         // unlock the queue

@@ -48,7 +48,7 @@ struct BeInnerNode {
     UpsertBuffer<K, V, B_N> upserts;
     std::array<K, N> pivots;
     std::array<std::uint64_t, N + 1> children;
-    std::uint64_t size = 0; // amount of pivots
+    std::uint64_t size = 0;// amount of pivots
 };
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t N>
@@ -100,7 +100,6 @@ template<class K, class V, std::size_t PAGE_SIZE, short EPSILON>
 class BeNodeWrapper {
 
 public:
-
     // 1 byte is needed for the bool
     using NodeSizesT = NodeSizes<K, V, PAGE_SIZE - 1, EPSILON>;
     using BeInnerNodeT = BeInnerNode<K, V, NodeSizesT::INNER_B_N, NodeSizesT::INNER_N>;

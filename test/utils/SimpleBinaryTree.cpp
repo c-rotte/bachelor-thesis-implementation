@@ -29,7 +29,7 @@ void SimpleBinaryTree::insert(int value) {
     assert(value != 0);
     auto* currentPage = &pageBuffer.pinPage(rootID, true);
     while (true) {
-        std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
+        //std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
         if (value <= *getNode(*currentPage).value) {
             if (getNode(*currentPage).leftID) {
                 auto* nextPage = &pageBuffer.pinPage(
@@ -38,7 +38,7 @@ void SimpleBinaryTree::insert(int value) {
                 currentPage = nextPage;
             } else {
                 std::uint64_t newPageID = pageBuffer.createPage();
-                auto* nextPage = &pageBuffer.pinPage(newPageID, true);
+                auto* nextPage = &pageBuffer.pinPage(newPageID, true, true);
                 getNode(*currentPage).leftID = newPageID;
                 pageBuffer.unpinPage(currentPage->id, true);
                 initializeNode(*nextPage);
@@ -54,7 +54,7 @@ void SimpleBinaryTree::insert(int value) {
                 currentPage = nextPage;
             } else {
                 std::uint64_t newPageID = pageBuffer.createPage();
-                auto* nextPage = &pageBuffer.pinPage(newPageID, true);
+                auto* nextPage = &pageBuffer.pinPage(newPageID, true, true);
                 getNode(*currentPage).rightID = newPageID;
                 pageBuffer.unpinPage(currentPage->id, true);
                 initializeNode(*nextPage);
@@ -70,7 +70,7 @@ bool SimpleBinaryTree::search(int value) {
     assert(value != 0);
     auto* currentPage = &pageBuffer.pinPage(rootID, true);
     while (true) {
-        std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
+        //std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
         if (value <= *getNode(*currentPage).value) {
             if (value == *getNode(*currentPage).value) {
                 pageBuffer.unpinPage(currentPage->id, false);

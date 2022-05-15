@@ -124,6 +124,7 @@ void PageBuffer<B, N>::deletePage(std::uint64_t id) {
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLoad) {
+    std::cout << "pinning " << id << std::endl;
     bool retry;
     do {
         retry = false;
@@ -134,6 +135,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
             assert(!fifoQueue.contains(id));
             // page is in memory (LRU)
             std::size_t pageIndex = lruQueue.find(id, true);
+            std::cout << "(lru) note: page index was " << pageIndex << std::endl;
             auto& page = pages[pageIndex];
             ++page.pins;
             // unlock the queue
@@ -149,6 +151,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
         if (fifoQueue.contains(id)) {
             // page is in memory (FIFO) -> move to LRU
             std::size_t pageIndex = fifoQueue.remove(id).second;
+            std::cout << "(fifo) note: page index was " << pageIndex << std::endl;
             lruQueue.insert(id, pageIndex);
             auto& page = pages[pageIndex];
             ++page.pins;
@@ -221,7 +224,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                         pageLock.unlock();
                         // re-lock the queue
                         queueLock.lock();
-                    }// unlock the page
+                    }
                 }
                 if (!fifoQueue.contains(id) &&
                     !lruQueue.contains(id) &&
@@ -245,6 +248,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                         // load the new page
                         loadPage(id, pageIndex);
                         // unlock the page
+                        pageLock.unlock();
                     }
                     // lock the page again
                     if (exclusive) {
@@ -288,7 +292,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                         pageLock.unlock();
                         // re-lock the queue
                         queueLock.lock();
-                    }// unlock the page
+                    }
                 }
                 if (!fifoQueue.contains(id) &&
                     !lruQueue.contains(id) &&
@@ -312,6 +316,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                         // load the new page
                         loadPage(id, pageIndex);
                         // unlock the page
+                        pageLock.unlock();
                     }
                     // lock the page again
                     if (exclusive) {
@@ -335,10 +340,12 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
+    std::cout << "unpinning " << id << std::endl;
     // lock the queue
     std::unique_lock queueLock(queueMutex);
     if (fifoQueue.contains(id)) {
         std::size_t index = fifoQueue.find(id);
+        std::cout << "note (unpin): page index was " << index << std::endl;
         auto& page = pages[index];
         page.mutex.unlock();// release the page lock
         if (dirty) {
@@ -350,6 +357,7 @@ void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
     }
     if (lruQueue.contains(id)) {
         std::size_t index = lruQueue.find(id, false);
+        std::cout << "note (unpin): page index was " << index << std::endl;
         auto& page = pages[index];
         page.mutex.unlock();// release the page lock
         if (dirty) {

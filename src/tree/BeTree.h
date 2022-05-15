@@ -11,7 +11,9 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
+#include <gtest/gtest.h>
 #include <new>
+#include <numeric>
 #include <optional>
 #include <queue>
 #include <tuple>
@@ -19,17 +21,6 @@
 #include <vector>
 // --------------------------------------------------------------------------
 namespace {
-// --------------------------------------------------------------------------
-template<class T>
-std::vector<T> splitVector(std::vector<T>& vec, std::size_t index)
-// splits vec at index (vec contains [0, index); result contains [index; vec.end))
-{
-    assert(index < vec.size());
-    std::vector<T> result;
-    std::move(vec.begin() + index, vec.end(), std::back_inserter(result));
-    vec.resize(index);
-    return result;
-}
 // --------------------------------------------------------------------------
 }// namespace
 // --------------------------------------------------------------------------
@@ -66,23 +57,26 @@ private:
     // as a copy of the middle key (pivot)
     // note the returned page is still exclusively locked
     PageT& splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT&, K&);
+    FRIEND_TEST(BeTreeMethods, splitLeafNode);
     // splits a leaf node by creating a new page and returning it as well
     // as the removed middle key (pivot)
     // note the returned page is still exclusively locked
     PageT& splitInnerNode(typename BeNodeWrapperT::BeInnerNodeT&, K&);
+    FRIEND_TEST(BeTreeMethods, splitInnerNode);
     // inserts pivot elements
+    // tuples: (index of the split child, midKey, id of the right page)
     void insertPivots(typename BeNodeWrapperT::BeInnerNodeT&,
                       std::vector<std::tuple<std::size_t, K, std::uint64_t>>);
-    // inserts values
-    void insertValues(typename BeNodeWrapperT::BeLeafNodeT&,
-                      std::vector<std::tuple<std::size_t, K, V>>);
+    FRIEND_TEST(BeTreeMethods, insertPivots);
     // sorts the messages and returns a vector of indexes (which point to the
     // removed message blocks returned in the reference)
-    std::unordered_map<std::size_t, std::vector<Upsert<K, V>>> removeMessages(
-            typename BeNodeWrapperT::BeInnerNodeT&,
-            std::vector<Upsert<K, V>>, std::size_t&);
-
+    using MessageMap = std::unordered_map<std::size_t, std::vector<Upsert<K, V>>>;
+    MessageMap removeMessages(typename BeNodeWrapperT::BeInnerNodeT&,
+                              std::vector<Upsert<K, V>>);
+    FRIEND_TEST(BeTreeMethods, removeMessages);
     // helper functions for upsert
+    void handleTraversalNode(PageT*, MessageMap,
+                             std::queue<std::pair<PageT*, MessageMap>>&);
     void flushRootNode(PageT*, Upsert<K, V>);
     void handleRootInnerUpsert(Upsert<K, V>, PageT*);
     void handleRootLeafUpsert(Upsert<K, V>, PageT*);
@@ -96,6 +90,9 @@ public:
     std::optional<V> find(const K&);
 
     void flush();
+
+    template<class K_O, class V_O, std::size_t B_O, std::size_t N_O, short EPSILON_O>
+    friend std::ostream& operator<<(std::ostream&, BeTree<K_O, V_O, B_O, N_O, EPSILON_O>&);
 };
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
@@ -204,7 +201,8 @@ void BeTree<K, V, B, N, EPSILON>::insertPivots(typename BeNodeWrapperT::BeInnerN
     // the elements must be sorted and unique
     assert(std::is_sorted(newPivots.begin(), newPivots.end(),
                           [](const PivotTuple& a, const PivotTuple& b) {
-                              return std::get<0>(a) <= std::get<0>(b);
+                              assert(std::get<0>(a) != std::get<0>(b));
+                              return std::get<0>(a) < std::get<0>(b);
                           }));
     assert(std::is_sorted(newPivots.begin(), newPivots.end(),
                           [](const PivotTuple& a, const PivotTuple& b) {
@@ -220,139 +218,293 @@ void BeTree<K, V, B, N, EPSILON>::insertPivots(typename BeNodeWrapperT::BeInnerN
         std::uint64_t child = std::get<2>(pivotTuple);
         // must be a valid index
         assert(index + it - 1 < innerNode.pivots.size());
+        assert(lastFirst + it <= innerNode.pivots.size());
         // move everything to the right
+        /*
+        std::cout << "it=" << it << " index=" << index << " lastFirst=" << lastFirst << std::endl;
+        for (std::size_t i = 0; i < innerNode.size + newPivots.size(); i++) {
+            std::cout << innerNode.pivots[i] << " ";
+        }
+        std::cout << std::endl;
+        */
         std::move_backward(innerNode.pivots.begin() + index,
                            innerNode.pivots.begin() + lastFirst,
-                           innerNode.pivots.begin() + index + it);
+                           innerNode.pivots.begin() + lastFirst + it);
         std::move_backward(innerNode.children.begin() + index + 1,
                            innerNode.children.begin() + lastFirst + 1,
-                           innerNode.children.begin() + index + it);
+                           innerNode.children.begin() + lastFirst + it + 1);
         // insert the pivot and its child
         innerNode.pivots[index + it - 1] = key;
         innerNode.children[index + it] = child;
+        /*
+        for (std::size_t i = 0; i < innerNode.size + newPivots.size(); i++) {
+            std::cout << innerNode.pivots[i] << " ";
+        }
+        std::cout << std::endl;
+        */
+        lastFirst = index;
     }
     // adjust the size
     innerNode.size += newPivots.size();
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
-void BeTree<K, V, B, N, EPSILON>::insertValues(typename BeNodeWrapperT::BeLeafNodeT& leafNode,
-                                               std::vector<std::tuple<std::size_t, K, V>> newValues) {
-    using ValueTuple = std::tuple<std::size_t, K, V>;
-    // must have free slots
-    assert(leafNode.size + newValues.size() <= leafNode.keys.size());
-    // the elements must be sorted and unique
-    assert(std::is_sorted(newValues.begin(), newValues.end(),
-                          [](const ValueTuple& a, const ValueTuple& b) {
-                              return std::get<0>(a) <= std::get<0>(b);
-                          }));
-    assert(std::is_sorted(newValues.begin(), newValues.end(),
-                          [](const ValueTuple& a, const ValueTuple& b) {
-                              assert(std::get<1>(a) != std::get<1>(b));
-                              return std::get<1>(a) < std::get<1>(b);
-                          }));
-    // iterate backwards to keep the moves at a minimum
-    std::size_t lastFirst = leafNode.size;// keep track of the last move
-    for (std::size_t it = newValues.size(); it > 0; it--) {
-        ValueTuple& valueTuple = newValues[it - 1];
-        std::size_t index = std::get<0>(valueTuple);
-        K key = std::get<1>(valueTuple);
-        V value = std::move(std::get<2>(valueTuple));
-        // must be a valid index
-        assert(index + it - 1 < leafNode.keys.size());
-        // move everything to the right
-        std::move_backward(leafNode.keys.begin() + index,
-                           leafNode.keys.begin() + lastFirst,
-                           leafNode.keys.begin() + index + it);
-        std::move_backward(leafNode.values.begin() + index,
-                           leafNode.values.begin() + lastFirst,
-                           leafNode.values.begin() + index + it);
-        // insert the pivot and its child
-        leafNode.keys[index + it] = key;
-        leafNode.values[index + it] = std::move(value);
+typename BeTree<K, V, B, N, EPSILON>::MessageMap
+BeTree<K, V, B, N, EPSILON>::removeMessages(
+        typename BeNodeWrapperT::BeInnerNodeT& innerNode,
+        std::vector<Upsert<K, V>> additionalUpserts) {
+    // we need to free |all messages| - |buffer size| slots
+    const std::size_t neededUpsertSlots = innerNode.upserts.size +
+                                          additionalUpserts.size() -
+                                          innerNode.upserts.upserts.size();
+    assert(std::is_sorted(innerNode.upserts.upserts.begin(),
+                          innerNode.upserts.upserts.begin() + innerNode.upserts.size));
+    assert(std::is_sorted(additionalUpserts.begin(), additionalUpserts.end()));
+    // merge the node and the additionalUpserts
+    std::vector<Upsert<K, V>> allMessages;
+    allMessages.reserve(innerNode.upserts.size + additionalUpserts.size());
+    std::merge(innerNode.upserts.upserts.begin(),
+               innerNode.upserts.upserts.begin() + innerNode.upserts.size,
+               additionalUpserts.begin(),
+               additionalUpserts.end(),
+               std::back_inserter(allMessages));
+    // now scan all messages for blocks
+    // first index, last index (exclusive), child index
+    using BlockTuple = std::tuple<std::size_t, std::size_t, std::size_t>;
+    std::vector<BlockTuple> messageBlocks;
+    std::size_t lastStartingIndex = 0;
+    K lastKey = allMessages.front().key;
+    std::size_t lastChildIndex =
+            std::lower_bound(innerNode.pivots.begin(),
+                             innerNode.pivots.begin() + innerNode.size,
+                             lastKey) -
+            innerNode.pivots.begin();
+    for (std::size_t i = 1; i < allMessages.size(); i++) {
+        const K& currentKey = allMessages[i].key;
+        if (currentKey != lastKey) {
+            // check if the child is still the same
+            const std::size_t currentChildIndex =
+                    std::lower_bound(innerNode.pivots.begin(),
+                                     innerNode.pivots.begin() + innerNode.size,
+                                     currentKey) -
+                    innerNode.pivots.begin();
+            if (currentChildIndex != lastChildIndex) {
+                // found a new message block -> add the last one
+                messageBlocks.emplace_back(lastStartingIndex, i, lastChildIndex);
+                lastStartingIndex = i;
+                lastKey = currentKey;
+                lastChildIndex = currentChildIndex;
+            }
+        }
     }
-    // adjust the size
-    leafNode.size += newValues.size();
+    // add the last block
+    messageBlocks.emplace_back(lastStartingIndex, allMessages.size(), lastChildIndex);
+    // create a vector of references (indexes) to the tuples
+    std::vector<std::size_t> blockReferences(messageBlocks.size());
+    std::iota(blockReferences.begin(), blockReferences.end(), 0);
+    // sort the references according to their size (starting with the largest)
+    // first index, last index (exclusive), child index
+    std::sort(blockReferences.begin(), blockReferences.end(),
+              [&messageBlocks](const std::size_t& indexA, const std::size_t& indexB) {
+                  const BlockTuple& a = messageBlocks[indexA];
+                  const BlockTuple& b = messageBlocks[indexB];
+                  const std::size_t sizeA = std::get<1>(a) - std::get<0>(a);
+                  const std::size_t sizeB = std::get<1>(b) - std::get<0>(b);
+                  return sizeA >= sizeB;
+              });
+    // now loop through the tuples until we have enough slots
+    MessageMap result;
+    std::size_t collectedSlots = 0;
+    for (auto it = blockReferences.begin();
+         collectedSlots < neededUpsertSlots &&
+         it != blockReferences.end();
+         ++it) {
+        auto& messageBlock = messageBlocks[*it];
+        // move the messages to the result map
+        auto& resultVec = result[std::get<2>(messageBlock)];
+        assert(resultVec.empty());
+        const std::size_t blockSize = std::get<1>(messageBlock) -
+                                      std::get<0>(messageBlock);
+        resultVec.reserve(blockSize);
+        std::move(allMessages.begin() + std::get<0>(messageBlock),
+                  allMessages.begin() + std::get<1>(messageBlock),
+                  std::back_inserter(resultVec));
+        collectedSlots += blockSize;
+        assert(std::is_sorted(resultVec.begin(), resultVec.end()));
+        // invalidate the reference
+        *it = blockReferences.size();
+    }
+    // sort the references again, but this time accordingly to their natural order
+    std::sort(blockReferences.begin(), blockReferences.end());
+    // move the rest back to the node
+    innerNode.upserts.size = 0;
+    for (std::size_t index: blockReferences) {
+        if (index == blockReferences.size()) {
+            // this block was removed -> continue
+            continue;
+        }
+        auto& messageBlock = messageBlocks[index];
+        const std::size_t blockSize = std::get<1>(messageBlock) -
+                                      std::get<0>(messageBlock);
+        std::move(allMessages.begin() + std::get<0>(messageBlock),
+                  allMessages.begin() + std::get<1>(messageBlock),
+                  innerNode.upserts.upserts.begin() + innerNode.upserts.size);
+        innerNode.upserts.size += blockSize;
+    }
+    assert(std::is_sorted(innerNode.upserts.upserts.begin(),
+                          innerNode.upserts.upserts.begin() + innerNode.upserts.size));
+    return result;
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
-std::unordered_map<std::size_t, std::vector<Upsert<K, V>>>
-BeTree<K, V, B, N, EPSILON>::removeMessages(
-        typename BeNodeWrapperT::BeInnerNodeT& innerNode,
-        std::vector<Upsert<K, V>> additionalUpserts, std::size_t& addressedChildren) {
-    const std::size_t neededUpsertSlots = additionalUpserts.size();
-    assert(neededUpsertSlots > innerNode.upserts.upserts.size() - innerNode.upserts.size);
-    assert(neededUpsertSlots <= innerNode.upserts.upserts.size());
-    // move everything to the vector
-    std::move(innerNode.upserts.upserts.begin(),
-              innerNode.upserts.upserts.begin() + innerNode.upserts.size,
-              std::back_inserter(additionalUpserts));
-    // count the number of messages of each child index
-    std::unordered_map<std::size_t, std::size_t> childCount;
-    std::unordered_map<K, std::size_t> childIndexes;
-    for (std::size_t i = 0; i < additionalUpserts.size(); i++) {
-        const auto& upsert = additionalUpserts[i];
-        std::size_t childIndex;
-        if (childIndexes.find(upsert.key) == childIndexes.end()) {
-            // find the children of the message using binary search
-            auto pivotIt = std::lower_bound(innerNode.pivots.begin(),
-                                            innerNode.pivots.begin() + innerNode.size,
-                                            upsert.key);
-            // the left child is the target
-            childIndex = pivotIt - innerNode.pivots.begin();
-            childIndexes[upsert.key] = childIndex;
+void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
+                                                      MessageMap messageMap,
+                                                      std::queue<std::pair<PageT*, MessageMap>>& queue) {
+    // queue: <node, messages>
+    // the additional messages are already removed
+    auto& currentNode = accessNode(*currentPage).asInner();
+    // pin each child and split it if necessary
+    std::vector<std::tuple<std::size_t, K, std::uint64_t>> newPivots;
+    for (auto& [childIndex, vector]: messageMap) {
+        std::cout << currentPage->id << ": currently at childIndex " << childIndex << std::endl;
+        assert(childIndex <= currentNode.size);
+        assert(std::is_sorted(vector.begin(), vector.end()));
+        PageT& childPage = pageBuffer.pinPage(
+                currentNode.children[childIndex], true);
+        if (accessNode(childPage).isLeaf()) {
+            // base case: we arrived at the leaf level
+            auto& leafChild = accessNode(childPage).asLeaf();
+            // count the future node size
+            std::size_t futureSize = leafChild.size;
+            for (const auto& upsert: vector) {
+                futureSize += (upsert.type == UpsertType::INSERT);
+                futureSize -= (upsert.type == UpsertType::DELETE);
+            }
+            std::optional<std::pair<K, PageT*>> rightSplitResult;
+            if (futureSize > leafChild.keys.size()) {
+                // we need to split the leaf
+                K middleKey;
+                // <rightPage> is automatically uniquely pinned
+                PageT& rightPage = splitLeafNode(leafChild, middleKey);
+                rightSplitResult = std::make_pair(middleKey, &rightPage);
+                // add the pivot
+                newPivots.emplace_back(childIndex, middleKey, rightPage.id);
+            }
+            // insert the messages
+            for (auto& upsert: vector) {
+                // determine the target node
+                PageT* targetPage = &childPage;
+                if (rightSplitResult && upsert.key > rightSplitResult->first) {
+                    targetPage = rightSplitResult->second;
+                }
+                auto& targetNode = accessNode(*targetPage).asLeaf();
+                assert(targetNode.size < targetNode.keys.size());
+                // search for the key index
+                auto keyIt = std::lower_bound(targetNode.keys.begin(),
+                                              targetNode.keys.begin() + targetNode.size,
+                                              upsert.key);
+                std::size_t keyIndex = keyIt - targetNode.keys.begin();
+                if (upsert.type == UpsertType::DELETE) {
+                    // the key must exist
+                    if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
+                        // TODO: clean up / recover
+                        throw std::runtime_error("Could not find the key to delete.");
+                    }
+                    // delete the key (shift [index; end) one to the left)
+                    std::move(targetNode.keys.begin() + keyIndex + 1,
+                              targetNode.keys.begin() + targetNode.size,
+                              targetNode.keys.begin() + keyIndex);
+                    // adjust the size
+                    targetNode.size--;
+                    continue;
+                }
+                if (upsert.type == UpsertType::UPDATE) {
+                    // the key must exist
+                    if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
+                        // TODO: clean up / recover
+                        throw std::runtime_error("invalid delete");
+                    }
+                    // update the key
+                    targetNode.values[keyIndex] += upsert.value;
+                    continue;
+                }
+                if (upsert.type == UpsertType::INSERT) {
+                    // the key must not exist
+                    if (keyIndex >= targetNode.keys.size() || *keyIt == upsert.key) {
+                        // TODO: clean up / recover
+                        throw std::runtime_error("invalid insert");
+                    }
+                    // insert the key,value
+                    std::move_backward(targetNode.keys.begin() + keyIndex,
+                                       targetNode.keys.begin() + targetNode.size,
+                                       targetNode.keys.begin() + targetNode.size + 1);
+                    std::move_backward(targetNode.values.begin() + keyIndex,
+                                       targetNode.values.begin() + targetNode.size,
+                                       targetNode.values.begin() + targetNode.size + 1);
+                    std::cout << "inserting " << upsert.key << " at index " << keyIndex << std::endl;
+                    targetNode.keys[keyIndex] = upsert.key;
+                    targetNode.values[keyIndex] = std::move(upsert.value);
+                    targetNode.size++;
+                    continue;
+                }
+            }
+            // free both the left and right page
+            pageBuffer.unpinPage(childPage.id, true);
+            if (rightSplitResult) {
+                pageBuffer.unpinPage(rightSplitResult->second->id, true);
+            }
         } else {
-            childIndex = childIndexes[upsert.key];
-        }
-        if (childCount.find(childIndex) == childCount.end()) {
-            childCount[childIndex] = 1;
-        } else {
-            childCount[childIndex]++;
-        }
-    }
-    // sort the messages
-    std::sort(additionalUpserts.begin(),
-              additionalUpserts.end(),
-              [&childCount, &childIndexes](const Upsert<K, V>& a, const Upsert<K, V>& b) {
-                  assert(childIndexes.count(a.key) && childIndexes.count(b.key));
-                  std::size_t indexA = childIndexes[a.key];
-                  std::size_t indexB = childIndexes[b.key];
-                  assert(childCount.count(indexA) && childCount.count(indexB));
-                  std::size_t countA = childCount[indexA];
-                  std::size_t countB = childCount[indexB];
-                  if (countA == countB) {
-                      return a <= b;
-                  }
-                  return countA > countB;
-              });
-    // now the biggest messages are at the start
-    std::unordered_map<std::size_t, std::vector<Upsert<K, V>>> result;// child index -> messages
-    result[additionalUpserts.front().key] = {std::move(additionalUpserts.front())};
-    addressedChildren = 0;
-    std::size_t i;
-    for (i = 1; i < additionalUpserts.size(); i++) {
-        auto& upsert = additionalUpserts[i];
-        if (childIndexes[upsert.key] != childIndexes[additionalUpserts[i - 1].key]) {
-            if (additionalUpserts.size() - i - 1 >= neededUpsertSlots) {
-                addressedChildren++;
-                break;
+            // the children are inner nodes
+            auto& innerChild = accessNode(childPage).asInner();
+            std::cout << "buffering... " << (innerChild.upserts.upserts.size() - innerChild.upserts.size) << " vs " << vector.size() << std::endl;
+            if (innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
+                // the child has enough space for its addressed messages
+                // -> store them and continue
+                std::vector<Upsert<K, V>> nodeUpserts;
+                // we need to copy the upserts since std::merge does not like overlapping ranges
+                nodeUpserts.reserve(innerChild.upserts.size);
+                std::move(innerChild.upserts.upserts.begin(),
+                          innerChild.upserts.upserts.begin() + innerChild.upserts.size,
+                          std::back_inserter(nodeUpserts));
+                std::merge(nodeUpserts.begin(), nodeUpserts.end(),
+                           vector.begin(), vector.end(),
+                           innerChild.upserts.upserts.begin());
+                innerChild.upserts.size += vector.size();
+                // free the page
+                pageBuffer.unpinPage(childPage.id, true);
+                continue;
+            }
+            // remove its messages
+            auto messageMap = std::move(removeMessages(
+                    innerChild, std::move(vector)));
+            if (innerChild.pivots.size() - innerChild.size < messageMap.size()) {
+                // we need to split the child
+                K middleKey;
+                PageT& rightPage = splitInnerNode(innerChild, middleKey);
+                newPivots.emplace_back(childIndex, middleKey, rightPage.id);
+                // split the additional messages
+                MessageMap leftMap, rightMap;
+                for (auto& [childIndex, vector]: messageMap) {
+                    if (childIndex <= innerChild.size + 1) {
+                        assert(!leftMap.count(childIndex));
+                        leftMap[childIndex] = std::move(vector);
+                    } else {
+                        const std::size_t adjustedChildIndex = childIndex - innerChild.size - 1;
+                        assert(!rightMap.count(adjustedChildIndex));
+                        leftMap[adjustedChildIndex] = std::move(vector);
+                    }
+                }
+                queue.emplace(&childPage, std::move(leftMap));
+                queue.emplace(&rightPage, std::move(rightMap));
+            } else {
+                queue.emplace(&childPage, std::move(messageMap));
             }
         }
-        result[childIndexes[upsert.key]].push_back(std::move(upsert));
     }
-    const std::size_t includedMessages = additionalUpserts.size() - i - 1;
-    // i marks the beginning of the first included message block
-    assert(includedMessages <= innerNode.upserts.upserts.size());
-    // move the right messages back to the node
-    std::move(additionalUpserts.begin() + i,
-              additionalUpserts.end(),
-              innerNode.upserts.upserts.begin());
-    assert(includedMessages == additionalUpserts.size() - i - 1);
-    innerNode.upserts.size = includedMessages;
-    // sort the messages in the node
-    std::sort(innerNode.upserts.upserts.begin(),
-              innerNode.upserts.upserts.begin() + innerNode.upserts.size);
-    return result;
+    // insert the pivots into the parent
+    insertPivots(currentNode, std::move(newPivots));
+    // unlock the parent
+    pageBuffer.unpinPage(currentPage->id, true);
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
@@ -365,16 +517,15 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
     // b) has a buffer with messages removed to <additionalMessages>
     // c) is currently locked
     // d) a parent which is unlocked
-    using MessageMap = std::unordered_map<std::size_t, std::vector<Upsert<K, V>>>;
     std::queue<std::pair<PageT*, MessageMap>> queue;// <node, messages>
     // handle root
     {
         auto& rootNode = accessNode(*rootPage).asInner();
-        std::size_t addressedChildren;
         auto messageMap = std::move(removeMessages(
-                rootNode, {std::move(message)}, addressedChildren));
+                rootNode, {std::move(message)}));
         // check if the root needs slots for the potential splits of the children
-        if (rootNode.pivots.size() - rootNode.size < addressedChildren) {
+        if (rootNode.pivots.size() - rootNode.size < messageMap.size()) {
+            std::cout << "rootNode.size: " << rootNode.size << std::endl;
             // we need to create a new root
             K midKey;
             PageT& rightPage = splitInnerNode(rootNode, midKey);
@@ -394,20 +545,27 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
             MessageMap leftMap;
             MessageMap rightMap;
             for (auto& [childIndex, vector]: messageMap) {
-                if (childIndex <= newRootNode.size + 1) {
+                if (childIndex <= newRootNode.size) {
                     assert(!leftMap.count(childIndex));
+                    std::cout << "childIndex: " << childIndex << std::endl;
                     leftMap[childIndex] = std::move(vector);
                 } else {
+                    auto& node = accessNode(rightPage).asInner();
+                    for (int i = 0; i < node.size; i++) {
+                    }
+                    std::cout << "node.size: " << node.size << std::endl;
+                    std::cout << "left.size: " << newRootNode.size << std::endl;
                     const std::size_t adjustedChildIndex = childIndex - newRootNode.size - 1;
+                    std::cout << "adjustedChildIndex: " << adjustedChildIndex << std::endl;
                     assert(!rightMap.count(adjustedChildIndex));
                     rightMap[adjustedChildIndex] = std::move(vector);
                 }
             }
-            queue.push(std::make_pair(&newRootPage, std::move(leftMap)));
-            queue.push(std::make_pair(&rightPage, std::move(rightMap)));
+            queue.emplace(&newRootPage, std::move(leftMap));
+            queue.emplace(&rightPage, std::move(rightMap));
         } else {
             // the root has enough space, pass it to the queue
-            queue.push(std::make_pair(rootPage, std::move(messageMap)));
+            queue.emplace(rootPage, std::move(messageMap));
         }
     }
     // main action: level order traversal
@@ -415,145 +573,7 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
         auto [currentPage, messageMap] = std::move(queue.front());
         queue.pop();
         assert(!accessNode(*currentPage).isLeaf());
-        // the additional messages are already removed
-        auto& currentNode = accessNode(*currentPage).asInner();
-        // pin each child and split it if necessary
-        std::unordered_map<PageT*, MessageMap> accumulatedMaps;
-        // helper map
-        std::unordered_map<std::size_t, PageT*> pinnedChildren;
-        std::vector<std::tuple<std::size_t, K, std::uint64_t>> pivots;
-        for (auto& [childIndex, vector]: messageMap) {
-            if (pinnedChildren.find(childIndex) == pinnedChildren.end()) {
-                pinnedChildren[childIndex] = &pageBuffer.pinPage(
-                        currentNode.children[childIndex], true);
-            }
-            if (accessNode(*pinnedChildren[childIndex]).isLeaf()) {
-                // base case: we arrived at the leaf level
-                auto& leafChild = accessNode(*pinnedChildren[childIndex]).asLeaf();
-                assert(std::is_sorted(vector.begin(), vector.end()));
-                // insert the messages
-                std::unordered_map<PageT*, std::vector<std::tuple<std::size_t, K, V>>> accumulatedInserts;
-                for (auto& upsert: vector) {
-                    if (upsert.type != INSERT) {
-                        // flush the inserts
-                        for (auto& [pagePtr, inserts]: accumulatedInserts) {
-                            assert(accessNode(*pagePtr).isLeaf());
-                            insertValues(accessNode(*pagePtr).asLeaf(), std::move(inserts));
-                        }
-                        accumulatedInserts.clear();
-                    }
-                    // search for the key index
-                    auto keyIt = std::lower_bound(leafChild.keys.begin(),
-                                                  leafChild.keys.begin() + leafChild.size,
-                                                  upsert.key);
-                    std::size_t keyIndex = keyIt - leafChild.keys.begin();
-                    if (upsert.type == DELETE) {
-                        // the key must exist
-                        assert(keyIt != leafChild.keys.end());
-                        assert(*keyIt == upsert.key);
-                        // delete the key (shift [index; end) one to the left)
-                        std::move(leafChild.keys.begin() + keyIndex + 1,
-                                  leafChild.keys.begin() + leafChild.size,
-                                  leafChild.keys.begin() + keyIndex);
-                        // adjust the size
-                        leafChild.size--;
-                        continue;
-                    }
-                    if (upsert.type == UPDATE) {
-                        // the key must exist
-                        assert(keyIt != leafChild.keys.end());
-                        assert(*keyIt == upsert.key);
-                        // update the key
-                        leafChild.values[keyIndex] += upsert.value;
-                        continue;
-                    }
-                    if (upsert.type == INSERT) {
-                        // the key must not exist
-                        assert(keyIt != leafChild.keys.end());
-                        assert(*keyIt != upsert.key);
-                        auto* targetPage = currentPage;// page which will receive the insert
-                        if (leafChild.size == leafChild.keys.size()) {
-                            // full leaf -> split it
-                            K middleKey;
-                            // <rightPage> is automatically uniquely pinned
-                            PageT& rightPage = splitLeafNode(leafChild, middleKey);
-                            // insert the pivot into the parent
-                            auto pivotIt = std::lower_bound(currentNode.pivots.begin(),
-                                                            currentNode.pivots.begin() + currentNode.size,
-                                                            middleKey);
-                            pivots.push_back(std::tuple<std::size_t, K, std::uint64_t>(
-                                    pivotIt - currentNode.pivots.begin(),
-                                    middleKey,
-                                    rightPage.id));
-                            // check which child will receive the insert
-                            if (upsert.key <= middleKey) {
-                                pageBuffer.unpinPage(currentPage->id, true);
-                                targetPage = currentPage;
-                            } else {
-                                pageBuffer.unpinPage(rightPage.id, true);
-                                targetPage = &rightPage;
-                                // recalc keyIndex
-                                keyIndex -= leafChild.size;
-                            }
-                        }
-                        // from here on only use targetPage
-                        assert(accessNode(*targetPage).isLeaf());
-                        accumulatedInserts[targetPage].push_back(std::make_tuple(
-                                keyIndex, std::move(upsert.key), std::move(upsert.value)));
-                        continue;
-                    }
-                }
-                // flush the remaining inserts
-                if (!accumulatedInserts.empty()) {
-                    for (auto& [pagePtr, inserts]: accumulatedInserts) {
-                        assert(accessNode(*pagePtr).isLeaf());
-                        insertValues(accessNode(*pagePtr).asLeaf(), std::move(inserts));
-                    }
-                }
-            } else {
-                // the children are inner nodes
-                PageT* childPage = pinnedChildren[childIndex];
-                auto& innerChild = accessNode(*childPage).asInner();
-                // remove its messages
-                std::size_t addressedChildren;
-                auto messageMap = std::move(removeMessages(
-                        innerChild, std::move(vector), addressedChildren));
-                if (innerChild.pivots.size() - innerChild.size < addressedChildren) {
-                    // we need to split the child
-                    K midKey;
-                    PageT& rightPage = splitInnerNode(innerChild, midKey);
-                    pivots.push_back(std::make_tuple(
-                            std::lower_bound(currentNode.pivots.begin(),
-                                             currentNode.pivots.begin() + currentNode.size,
-                                             midKey) -
-                                    currentNode.pivots.begin(),
-                            midKey, rightPage.id));
-                    // split the additional messages
-                    for (auto& [childIndex, vector]: messageMap) {
-                        if (childIndex <= innerChild.size + 1) {
-                            assert(!accumulatedMaps.count(childPage));
-                            accumulatedMaps[childPage][childIndex] = std::move(vector);
-                        } else {
-                            const std::size_t adjustedChildIndex = childIndex - innerChild.size - 1;
-                            assert(!accumulatedMaps.count(&rightPage));
-                            accumulatedMaps[&rightPage][adjustedChildIndex] = std::move(vector);
-                        }
-                    }
-                } else {
-                    assert(!accumulatedMaps.count(childPage));
-                    // just pass the child to the map
-                    accumulatedMaps[childPage] = std::move(messageMap);
-                }
-            }
-        }
-        // insert the pivots into the parent
-        insertPivots(currentNode, std::move(pivots));
-        // unlock the parent
-        pageBuffer.unpinPage(currentPage->id, true);
-        // add the children to the queue
-        for (auto& [page, messageMap]: accumulatedMaps) {
-            queue.push(std::make_pair(page, std::move(messageMap)));
-        }
+        handleTraversalNode(currentPage, std::move(messageMap), queue);
     }
 }
 // --------------------------------------------------------------------------
@@ -574,7 +594,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootInnerUpsert(Upsert<K, V> upsert, Pag
         // shift to the right
         std::move_backward(it,
                            innerNode.upserts.upserts.begin() + innerNode.upserts.size,
-                           it + 1);
+                           innerNode.upserts.upserts.begin() + innerNode.upserts.size + 1);
         innerNode.upserts.upserts[index] = std::move(upsert);
         innerNode.upserts.size++;
         pageBuffer.unpinPage(rootPage->id, true);
@@ -596,8 +616,8 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
     auto keyIt = std::lower_bound(leafNode.keys.begin(),
                                   leafNode.keys.begin() + leafNode.size,
                                   upsert.key);
-    const std::size_t keyIndex = keyIt - leafNode.keys.begin();
-    if (upsert.type == DELETE) {
+    std::size_t keyIndex = keyIt - leafNode.keys.begin();
+    if (upsert.type == UpsertType::DELETE) {
         // the key must exist
         assert(keyIt != leafNode.keys.end());
         assert(*keyIt == upsert.key);
@@ -611,7 +631,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
         pageBuffer.unpinPage(rootPage->id, true);
         return;
     }
-    if (upsert.type == UPDATE) {
+    if (upsert.type == UpsertType::UPDATE) {
         // the key must exist
         assert(keyIt != leafNode.keys.end());
         assert(*keyIt == upsert.key);
@@ -620,10 +640,11 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
         pageBuffer.unpinPage(rootPage->id, true);
         return;
     }
-    if (upsert.type == INSERT) {
-        // the key must not exist
-        assert(keyIt != leafNode.keys.end());
-        assert(*keyIt != upsert.key);
+    if (upsert.type == UpsertType::INSERT) {
+        if (keyIndex < leafNode.size) {
+            // the key must not exist
+            assert(*keyIt != upsert.key);
+        }
         auto* targetPage = rootPage;// page which will receive the insert
         if (leafNode.size == leafNode.keys.size()) {
             // full leaf -> split it
@@ -642,41 +663,26 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
                 newRootNode.size = 1;
                 // now swap with the root (this invalidates all references to the old root)
                 std::swap(newRoot.data, rootPage->data);
-            }
-            // update the pointers
-            auto* left = &newRoot;
-            auto* right = &rightPage;
-            {
-                auto* parent = rootPage;
-                // from here on only use left, right and parent
-                // as the other pointers and references may be dangling
-                auto& currentParentNode = accessNode(*parent).asInner();
-                auto parentPivotIt = std::lower_bound(currentParentNode.pivots.begin(),
-                                                      currentParentNode.pivots.begin() + currentParentNode.size,
-                                                      middleKey);
-                assert(parentPivotIt != currentParentNode.pivots.end());
-                // insert the new leaf into the parent
-                insertPivots(currentParentNode,
-                             {std::tuple<std::size_t, K, std::uint64_t>(
-                                     parentPivotIt - currentParentNode.pivots.begin(),
-                                     middleKey,
-                                     rightPage.id)});
                 // free the parent
-                pageBuffer.unpinPage(parent->id, true);
+                pageBuffer.unpinPage(rootPage->id, true);
             }
             // check which child will receive the insert
             if (upsert.key <= middleKey) {
-                pageBuffer.unpinPage(right->id, true);
-                targetPage = left;
+                pageBuffer.unpinPage(rightPage.id, true);
+                targetPage = &newRoot;
             } else {
-                pageBuffer.unpinPage(left->id, true);
-                targetPage = right;
+                // adjust the key index
+                auto& newRootNode = accessNode(newRoot).asLeaf();
+                keyIndex -= newRootNode.size;
+                pageBuffer.unpinPage(newRoot.id, true);
+                targetPage = &rightPage;
             }
         }
         // from here on only use targetPage
         assert(targetPage != nullptr);
         assert(accessNode(*targetPage).isLeaf());
         auto& targetLeafNode = accessNode(*targetPage).asLeaf();
+        std::cout << targetLeafNode.size << std::endl;
         // make room for the key (shift [index; end) one to the right)
         std::move(targetLeafNode.keys.begin() + keyIndex,
                   targetLeafNode.keys.begin() + targetLeafNode.size,
@@ -687,6 +693,9 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
         // insert the pair
         targetLeafNode.keys[keyIndex] = upsert.key;
         targetLeafNode.values[keyIndex] = std::move(upsert.value);
+        // adjust the size
+        targetLeafNode.size++;
+        // unpin the page
         pageBuffer.unpinPage(targetPage->id, true);
         return;
     }
@@ -697,9 +706,11 @@ void BeTree<K, V, B, N, EPSILON>::upsert(Upsert<K, V> upsert) {
     PageT* rootPage = &pageBuffer.pinPage(header.rootID, true);
     // first case: the root node is a leaf node (direct insert)
     if (accessNode(*rootPage).isLeaf()) {
+        std::cout << "leaf " << upsert.key << std::endl;
         handleRootLeafUpsert(std::move(upsert), rootPage);
         return;
     }
+    std::cout << "inner " << upsert.key << std::endl;
     // second case: the root node is an inner node
     handleRootInnerUpsert(std::move(upsert), rootPage);
 }
@@ -710,7 +721,7 @@ void BeTree<K, V, B, N, EPSILON>::insert(K key, V value) {
             std::move(key),
             std::move(value),
             ++header.currentTimeStamp,
-            INSERT};
+            UpsertType::INSERT};
     upsert(std::move(message));
 }
 // --------------------------------------------------------------------------
@@ -720,7 +731,7 @@ void BeTree<K, V, B, N, EPSILON>::update(K key, V value) {
             std::move(key),
             std::move(value),
             ++header.currentTimeStamp,
-            UPDATE};
+            UpsertType::UPDATE};
     upsert(std::move(message));
 }
 // --------------------------------------------------------------------------
@@ -730,7 +741,7 @@ void BeTree<K, V, B, N, EPSILON>::erase(const K& key) {
             key,
             V(),
             ++header.currentTimeStamp,
-            DELETE};
+            UpsertType::DELETE};
     upsert(std::move(message));
 }
 // --------------------------------------------------------------------------
@@ -744,25 +755,23 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         // find the last element of the message block
         auto lastIt = std::upper_bound(innerNode.upserts.upserts.begin(),
                                        innerNode.upserts.upserts.begin() + innerNode.upserts.size,
-                                       key, [](const K& k, const Upsert<K, V>& upsert) {
-                                           return k < upsert.key;
-                                       });
+                                       key);
         // <lastIt> points to the first element greater than <key>
         std::vector<V> localUpdates;
         bool deleted = false;
         for (; lastIt != innerNode.upserts.upserts.begin() && (lastIt - 1)->key == key; --lastIt) {
             const Upsert<K, V>& upsert = *lastIt;
-            if (upsert.type == DELETE) {
+            if (upsert.type == UpsertType::DELETE) {
                 localUpdates.clear();
                 currentValue = std::nullopt;
                 deleted = true;
                 continue;
             }
-            if (upsert.type == UPDATE) {
+            if (upsert.type == UpsertType::UPDATE) {
                 localUpdates.push_back(upsert.value);
                 continue;
             }
-            if (upsert.type == INSERT) {
+            if (upsert.type == UpsertType::INSERT) {
                 localUpdates.clear();
                 currentValue = upsert.value;
                 deleted = false;
@@ -801,7 +810,7 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         }
         pageBuffer.unpinPage(currentPage->id, false);
     } else {
-        // inserted or deleted (delted -> accumulatedUpdates is empty)
+        // inserted or deleted (deleted -> accumulatedUpdates is empty)
         for (auto it = accumulatedUpdates.rbegin(); it != accumulatedUpdates.rend(); ++it) {
             assert(currentValue);
             (*currentValue) += *it;
@@ -815,6 +824,67 @@ void BeTree<K, V, B, N, EPSILON>::flush() {
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
         throw std::runtime_error("Could not save the header (tree).");
     }
+}
+// --------------------------------------------------------------------------
+template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
+std::ostream& operator<<(std::ostream& out, BeTree<K, V, B, N, EPSILON>& tree) {
+    // level order traversal
+    std::queue<std::uint64_t> queue;
+    queue.push(tree.header.rootID);
+    std::cout << "digraph{\n";
+    while (!queue.empty()) {
+        std::uint64_t currentID = queue.front();
+        queue.pop();
+        auto& page = tree.pageBuffer.pinPage(currentID, false);
+        std::cout << page.id << "[label=\"";
+        if (tree.accessNode(page).isLeaf()) {
+            auto& leafNode = tree.accessNode(page).asLeaf();
+            for (std::size_t i = 0; i < leafNode.size; i++) {
+                std::cout << "(" << leafNode.keys[i] << " => " << leafNode.values[i] << ")";
+                if (i != leafNode.size - 1) {
+                    std::cout << ", ";
+                }
+            }
+            std::cout << "\"];\n";
+        } else {
+            auto& innerNode = tree.accessNode(page).asInner();
+            std::cout << "pivots=(";
+            for (std::size_t i = 0; i < innerNode.size; i++) {
+                std::cout << innerNode.pivots[i];
+                if (i != innerNode.size - 1) {
+                    std::cout << ", ";
+                }
+            }
+            std::cout << ") buffer=(";
+            for (std::size_t i = 0; i < innerNode.upserts.size; i++) {
+                std::cout << "(";
+                if (innerNode.upserts.upserts[i].type == 0) {
+                    std::cout << "INSERT";
+                } else if (innerNode.upserts.upserts[i].type == 1) {
+                    std::cout << "UPSERT";
+                } else if (innerNode.upserts.upserts[i].type == 2) {
+                    std::cout << "DELETE";
+                } else {
+                    std::cout << "UNKNOWN";
+                }
+                std::cout << ": " << innerNode.upserts.upserts[i].key << ", ";
+                std::cout << innerNode.upserts.upserts[i].value << ")";
+                if (i != innerNode.upserts.size - 1) {
+                    std::cout << ", ";
+                }
+            }
+            std::cout << ")";
+            std::cout << "\"];\n";
+            for (std::size_t i = 0; i < innerNode.size + 1; i++) {
+                std::uint64_t childID = innerNode.children[i];
+                std::cout << currentID << " -> " << childID << ";\n";
+                queue.push(childID);
+            }
+        }
+        tree.pageBuffer.unpinPage(currentID, false);
+    }
+    std::cout << "}";
+    return out;
 }
 // --------------------------------------------------------------------------
 }// namespace tree

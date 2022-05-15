@@ -366,7 +366,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
     // pin each child and split it if necessary
     std::vector<std::tuple<std::size_t, K, std::uint64_t>> newPivots;
     for (auto& [childIndex, vector]: messageMap) {
-        std::cout << currentPage->id << ": currently at childIndex " << childIndex << std::endl;
+        //std::cout << currentPage->id << ": currently at childIndex " << childIndex << std::endl;
         assert(childIndex <= currentNode.size);
         assert(std::is_sorted(vector.begin(), vector.end()));
         PageT& childPage = pageBuffer.pinPage(
@@ -441,7 +441,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                     std::move_backward(targetNode.values.begin() + keyIndex,
                                        targetNode.values.begin() + targetNode.size,
                                        targetNode.values.begin() + targetNode.size + 1);
-                    std::cout << "inserting " << upsert.key << " at index " << keyIndex << std::endl;
+                    //std::cout << "inserting " << upsert.key << " at index " << keyIndex << std::endl;
                     targetNode.keys[keyIndex] = upsert.key;
                     targetNode.values[keyIndex] = std::move(upsert.value);
                     targetNode.size++;
@@ -456,7 +456,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
         } else {
             // the children are inner nodes
             auto& innerChild = accessNode(childPage).asInner();
-            std::cout << "buffering... " << (innerChild.upserts.upserts.size() - innerChild.upserts.size) << " vs " << vector.size() << std::endl;
+            //std::cout << "buffering... " << (innerChild.upserts.upserts.size() - innerChild.upserts.size) << " vs " << vector.size() << std::endl;
             if (innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
                 // the child has enough space for its addressed messages
                 // -> store them and continue
@@ -491,7 +491,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                     } else {
                         const std::size_t adjustedChildIndex = childIndex - innerChild.size - 1;
                         assert(!rightMap.count(adjustedChildIndex));
-                        leftMap[adjustedChildIndex] = std::move(vector);
+                        rightMap[adjustedChildIndex] = std::move(vector);
                     }
                 }
                 queue.emplace(&childPage, std::move(leftMap));
@@ -525,7 +525,7 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
                 rootNode, {std::move(message)}));
         // check if the root needs slots for the potential splits of the children
         if (rootNode.pivots.size() - rootNode.size < messageMap.size()) {
-            std::cout << "rootNode.size: " << rootNode.size << std::endl;
+            //std::cout << "rootNode.size: " << rootNode.size << std::endl;
             // we need to create a new root
             K midKey;
             PageT& rightPage = splitInnerNode(rootNode, midKey);
@@ -547,16 +547,16 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
             for (auto& [childIndex, vector]: messageMap) {
                 if (childIndex <= newRootNode.size) {
                     assert(!leftMap.count(childIndex));
-                    std::cout << "childIndex: " << childIndex << std::endl;
+                    //std::cout << "childIndex: " << childIndex << std::endl;
                     leftMap[childIndex] = std::move(vector);
                 } else {
                     auto& node = accessNode(rightPage).asInner();
                     for (int i = 0; i < node.size; i++) {
                     }
-                    std::cout << "node.size: " << node.size << std::endl;
-                    std::cout << "left.size: " << newRootNode.size << std::endl;
+                    //std::cout << "node.size: " << node.size << std::endl;
+                    //std::cout << "left.size: " << newRootNode.size << std::endl;
                     const std::size_t adjustedChildIndex = childIndex - newRootNode.size - 1;
-                    std::cout << "adjustedChildIndex: " << adjustedChildIndex << std::endl;
+                    //std::cout << "adjustedChildIndex: " << adjustedChildIndex << std::endl;
                     assert(!rightMap.count(adjustedChildIndex));
                     rightMap[adjustedChildIndex] = std::move(vector);
                 }
@@ -682,7 +682,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
         assert(targetPage != nullptr);
         assert(accessNode(*targetPage).isLeaf());
         auto& targetLeafNode = accessNode(*targetPage).asLeaf();
-        std::cout << targetLeafNode.size << std::endl;
+        //std::cout << targetLeafNode.size << std::endl;
         // make room for the key (shift [index; end) one to the right)
         std::move(targetLeafNode.keys.begin() + keyIndex,
                   targetLeafNode.keys.begin() + targetLeafNode.size,
@@ -706,11 +706,11 @@ void BeTree<K, V, B, N, EPSILON>::upsert(Upsert<K, V> upsert) {
     PageT* rootPage = &pageBuffer.pinPage(header.rootID, true);
     // first case: the root node is a leaf node (direct insert)
     if (accessNode(*rootPage).isLeaf()) {
-        std::cout << "leaf " << upsert.key << std::endl;
+        //std::cout << "leaf " << upsert.key << std::endl;
         handleRootLeafUpsert(std::move(upsert), rootPage);
         return;
     }
-    std::cout << "inner " << upsert.key << std::endl;
+    //std::cout << "inner " << upsert.key << std::endl;
     // second case: the root node is an inner node
     handleRootInnerUpsert(std::move(upsert), rootPage);
 }
@@ -760,7 +760,7 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         std::vector<V> localUpdates;
         bool deleted = false;
         for (; lastIt != innerNode.upserts.upserts.begin() && (lastIt - 1)->key == key; --lastIt) {
-            const Upsert<K, V>& upsert = *lastIt;
+            const Upsert<K, V>& upsert = *(lastIt - 1);
             if (upsert.type == UpsertType::DELETE) {
                 localUpdates.clear();
                 currentValue = std::nullopt;

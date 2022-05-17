@@ -180,11 +180,11 @@ TEST(BeTreeMethods, insertPivots) {
         tree.insertPivots(innerNode, newPivots);
         ASSERT_EQ(innerNode.size, 9);
         const std::vector<std::size_t> resultPivots = {3, 5, 8, 10, 13, 15, 20, 25, 28};
-        for(std::size_t i = 0; i < 9; i++){
+        for (std::size_t i = 0; i < 9; i++) {
             ASSERT_EQ(innerNode.pivots[i], resultPivots[i]);
         }
         const std::vector<std::size_t> resultChildren = {2, 3, 7, 8, 12, 13, 17, 22, 27, 28};
-        for(std::size_t i = 0; i < 10; i++){
+        for (std::size_t i = 0; i < 10; i++) {
             ASSERT_EQ(innerNode.children[i], resultChildren[i]);
         }
     }
@@ -192,52 +192,40 @@ TEST(BeTreeMethods, insertPivots) {
 // --------------------------------------------------------------------------
 TEST(BeTreeMethods, removeMessages) {
     setup();
-    constexpr size_t BLOCK_SIZE = 4096;
+    constexpr size_t BLOCK_SIZE = 256;
     constexpr size_t PAGE_AMOUNT = 100;
     using BeTreeT = BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50>;
     BeTreeT tree(DIRNAME, 1.25);
     {
         BeTreeT::BeNodeWrapperT::BeInnerNodeT innerNode;
-        uint64_t totalXOR = 0;
-        for (std::size_t i = 0; i < 50; i++) {
+        for (std::size_t i = 0; i < 5; i++) {
             Upsert<uint64_t, uint64_t> upsert;
-            upsert.key = i;
-            totalXOR ^= i;
+            upsert.key = i * 2;
             innerNode.upserts.upserts[i] = std::move(upsert);
             innerNode.upserts.size++;
         }
-        for (std::size_t i = 0; i < 5; i++) {
-            innerNode.pivots[i] = i * 10 + 5;
-            innerNode.size++;
-        }
-        for (std::size_t i = 0; i <= innerNode.size; i++) {
-            innerNode.children[i] = i * 10;
-        }
+        innerNode.pivots[0] = 4;
+        innerNode.pivots[1] = 6;
+        innerNode.children[0] = 2;
+        innerNode.children[1] = 5;
+        innerNode.children[2] = 7;
+        innerNode.size = 2;
         std::vector<Upsert<uint64_t, uint64_t>> additionalUpserts;
-        for (std::size_t i = 0; i < 25; i++) {
+        for (std::size_t i = 10; i <= 12; i++) {
             Upsert<uint64_t, uint64_t> upsert;
             upsert.key = i;
-            totalXOR ^= i;
             upsert.timeStamp = 1;
             additionalUpserts.push_back(std::move(upsert));
         }
+
         BeTreeT::MessageMap messageMap = tree.removeMessages(innerNode, additionalUpserts);
-        ASSERT_EQ(messageMap.size(), 2);
-        ASSERT_EQ(messageMap[1].size(), 20);
-        ASSERT_EQ(messageMap[2].size(), 19);
+        ASSERT_EQ(messageMap.size(), 1);
+        ASSERT_EQ(messageMap[2].size(), 4);
+        const vector<uint64_t> expectedUpserts = {8, 10, 11, 12};
         for (std::size_t i = 0; i < messageMap[1].size(); i++) {
-            ASSERT_EQ(messageMap[1][i].key, 6 + i / 2);
-            totalXOR ^= messageMap[1][i].key;
+            ASSERT_EQ(messageMap[2][i].key, expectedUpserts[i]);
         }
-        for (std::size_t i = 0; i < messageMap[2].size(); i++) {
-            ASSERT_EQ(messageMap[2][i].key, 16 + i / 2);
-            totalXOR ^= messageMap[2][i].key;
-        }
-        for (std::size_t i = 0; i < innerNode.upserts.size; i++) {
-            totalXOR ^= innerNode.upserts.upserts[i].key;
-        }
-        ASSERT_EQ(innerNode.upserts.size, 50 + 25 - 20 - 19);
-        ASSERT_EQ(totalXOR, 0);
+        ASSERT_EQ(innerNode.upserts.size, 4);
     }
 }
 // --------------------------------------------------------------------------

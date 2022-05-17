@@ -166,7 +166,7 @@ BeNodeWrapper<K, V, PAGE_SIZE, EPSILON>::BeNodeWrapper(bool leaf) : leaf(leaf) {
     } else {
         new (data.data()) BeInnerNodeT;
     }
-    std::cout << NodeSizesT::LEAF_N << " " << NodeSizesT::INNER_B_N << " " << NodeSizesT::INNER_N << std::endl;
+    //std::cout << NodeSizesT::LEAF_N << " " << NodeSizesT::INNER_B_N << " " << NodeSizesT::INNER_N << std::endl;
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t PAGE_SIZE, short EPSILON>

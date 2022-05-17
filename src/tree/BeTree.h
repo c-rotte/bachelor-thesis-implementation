@@ -76,7 +76,7 @@ private:
     FRIEND_TEST(BeTreeMethods, removeMessages);
     // helper functions for upsert
     void handleTraversalNode(PageT*, MessageMap,
-                             std::queue<std::pair<PageT*, MessageMap>>&);
+                             std::deque<std::pair<PageT*, MessageMap>>&);
     void flushRootNode(PageT*, Upsert<K, V>);
     void handleRootInnerUpsert(Upsert<K, V>, PageT*);
     void handleRootLeafUpsert(Upsert<K, V>, PageT*);
@@ -176,7 +176,7 @@ BeTree<K, V, B, N, EPSILON>::splitInnerNode(typename BeNodeWrapperT::BeInnerNode
               rightInnerNode.children.begin());
     // adjust the sizes
     rightInnerNode.size = innerNode.size / 2;
-    innerNode.size = rightInnerNode.size;
+    innerNode.size = innerNode.size - rightInnerNode.size - 1;
     // move the upserts to the right (<it> points to the first removed element)
     auto it = std::remove_if(innerNode.upserts.upserts.begin(),
                              innerNode.upserts.upserts.begin() + innerNode.upserts.size,
@@ -359,14 +359,22 @@ BeTree<K, V, B, N, EPSILON>::removeMessages(
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                                                       MessageMap messageMap,
-                                                      std::queue<std::pair<PageT*, MessageMap>>& queue) {
+                                                      std::deque<std::pair<PageT*, MessageMap>>& queue) {
     // queue: <node, messages>
     // the additional messages are already removed
     auto& currentNode = accessNode(*currentPage).asInner();
     // pin each child and split it if necessary
-    std::vector<std::tuple<std::size_t, K, std::uint64_t>> newPivots;
+    using PivotTuple = std::tuple<std::size_t, K, std::uint64_t>;
+    std::vector<PivotTuple> newPivots;
     for (auto& [childIndex, vector]: messageMap) {
-        //std::cout << currentPage->id << ": currently at childIndex " << childIndex << std::endl;
+        /*
+        std::cout << currentPage->id << ": currently at childIndex " << childIndex << std::endl;
+        std::cout << "children: ";
+        for(int i = 0; i < currentNode.size + 1; i++){
+            std::cout << " " << currentNode.children[i];
+        }
+        std::cout << std::endl;
+        */
         assert(childIndex <= currentNode.size);
         assert(std::is_sorted(vector.begin(), vector.end()));
         PageT& childPage = pageBuffer.pinPage(
@@ -403,13 +411,10 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 auto keyIt = std::lower_bound(targetNode.keys.begin(),
                                               targetNode.keys.begin() + targetNode.size,
                                               upsert.key);
-                std::size_t keyIndex = keyIt - targetNode.keys.begin();
+                const std::size_t keyIndex = keyIt - targetNode.keys.begin();
                 if (upsert.type == UpsertType::DELETE) {
                     // the key must exist
-                    if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
-                        // TODO: clean up / recover
-                        throw std::runtime_error("Could not find the key to delete.");
-                    }
+                    assert(keyIndex < targetNode.size && * keyIt == upsert.key);
                     // delete the key (shift [index; end) one to the left)
                     std::move(targetNode.keys.begin() + keyIndex + 1,
                               targetNode.keys.begin() + targetNode.size,
@@ -420,20 +425,13 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 }
                 if (upsert.type == UpsertType::UPDATE) {
                     // the key must exist
-                    if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
-                        // TODO: clean up / recover
-                        throw std::runtime_error("invalid delete");
-                    }
+                    assert(keyIndex < targetNode.size && * keyIt == upsert.key);
                     // update the key
                     targetNode.values[keyIndex] += upsert.value;
                     continue;
                 }
                 if (upsert.type == UpsertType::INSERT) {
-                    // the key must not exist
-                    if (keyIndex >= targetNode.keys.size() || *keyIt == upsert.key) {
-                        // TODO: clean up / recover
-                        throw std::runtime_error("invalid insert");
-                    }
+                    assert(keyIndex < targetNode.keys.size() && *keyIt != upsert.key);
                     // insert the key,value
                     std::move_backward(targetNode.keys.begin() + keyIndex,
                                        targetNode.keys.begin() + targetNode.size,
@@ -449,8 +447,10 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 }
             }
             // free both the left and right page
+            //std::cout << "1" << std::endl;
             pageBuffer.unpinPage(childPage.id, true);
             if (rightSplitResult) {
+                //std::cout << "2" << std::endl;
                 pageBuffer.unpinPage(rightSplitResult->second->id, true);
             }
         } else {
@@ -471,6 +471,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                            innerChild.upserts.upserts.begin());
                 innerChild.upserts.size += vector.size();
                 // free the page
+                //std::cout << "3" << std::endl;
                 pageBuffer.unpinPage(childPage.id, true);
                 continue;
             }
@@ -481,11 +482,24 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 // we need to split the child
                 K middleKey;
                 PageT& rightPage = splitInnerNode(innerChild, middleKey);
+                {
+                    //auto& rightNode = accessNode(rightPage).asInner();
+                    /*
+                    std::cout << "left children: ";
+                    for (int i = 0; i < innerChild.size + 1; i++) {
+                        std::cout << " " << innerChild.children[i];
+                    }
+                    std::cout << "right children: ";
+                    for (int i = 0; i < rightNode.size + 1; i++) {
+                        std::cout << " " << rightNode.children[i];
+                    }
+                     */
+                }
                 newPivots.emplace_back(childIndex, middleKey, rightPage.id);
                 // split the additional messages
                 MessageMap leftMap, rightMap;
                 for (auto& [childIndex, vector]: messageMap) {
-                    if (childIndex <= innerChild.size + 1) {
+                    if (childIndex <= innerChild.size) {
                         assert(!leftMap.count(childIndex));
                         leftMap[childIndex] = std::move(vector);
                     } else {
@@ -494,16 +508,30 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                         rightMap[adjustedChildIndex] = std::move(vector);
                     }
                 }
-                queue.emplace(&childPage, std::move(leftMap));
-                queue.emplace(&rightPage, std::move(rightMap));
+                assert(!leftMap.empty() || !rightMap.empty());
+                if (leftMap.empty()) {
+                    pageBuffer.unpinPage(childPage.id, true);
+                } else {
+                    queue.emplace_back(&childPage, std::move(leftMap));
+                }
+                if (rightMap.empty()) {
+                    pageBuffer.unpinPage(rightPage.id, true);
+                } else {
+                    queue.emplace_back(&rightPage, std::move(rightMap));
+                }
             } else {
-                queue.emplace(&childPage, std::move(messageMap));
+                queue.emplace_back(&childPage, std::move(messageMap));
             }
         }
     }
     // insert the pivots into the parent
+    std::sort(newPivots.begin(), newPivots.end(),
+              [](const PivotTuple& a, const PivotTuple& b) {
+                  return std::get<0>(a) < std::get<0>(b);
+              });
     insertPivots(currentNode, std::move(newPivots));
     // unlock the parent
+    //std::cout << "5" << std::endl;
     pageBuffer.unpinPage(currentPage->id, true);
 }
 // --------------------------------------------------------------------------
@@ -517,7 +545,7 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
     // b) has a buffer with messages removed to <additionalMessages>
     // c) is currently locked
     // d) a parent which is unlocked
-    std::queue<std::pair<PageT*, MessageMap>> queue;// <node, messages>
+    std::deque<std::pair<PageT*, MessageMap>> queue;// <node, messages>
     // handle root
     {
         auto& rootNode = accessNode(*rootPage).asInner();
@@ -550,9 +578,6 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
                     //std::cout << "childIndex: " << childIndex << std::endl;
                     leftMap[childIndex] = std::move(vector);
                 } else {
-                    auto& node = accessNode(rightPage).asInner();
-                    for (int i = 0; i < node.size; i++) {
-                    }
                     //std::cout << "node.size: " << node.size << std::endl;
                     //std::cout << "left.size: " << newRootNode.size << std::endl;
                     const std::size_t adjustedChildIndex = childIndex - newRootNode.size - 1;
@@ -561,17 +586,25 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
                     rightMap[adjustedChildIndex] = std::move(vector);
                 }
             }
-            queue.emplace(&newRootPage, std::move(leftMap));
-            queue.emplace(&rightPage, std::move(rightMap));
+            queue.emplace_back(&newRootPage, std::move(leftMap));
+            queue.emplace_back(&rightPage, std::move(rightMap));
         } else {
             // the root has enough space, pass it to the queue
-            queue.emplace(rootPage, std::move(messageMap));
+            queue.emplace_back(rootPage, std::move(messageMap));
         }
     }
     // main action: level order traversal
     while (!queue.empty()) {
+        /*
+        std::cout << "pages: ";
+        for (const auto& pair: queue) {
+            std::cout << " " << pair.first->id;
+        }
+        std::cout << std::endl;
+        */
         auto [currentPage, messageMap] = std::move(queue.front());
-        queue.pop();
+        queue.pop_front();
+        //std::cout << std::endl;
         assert(!accessNode(*currentPage).isLeaf());
         handleTraversalNode(currentPage, std::move(messageMap), queue);
     }

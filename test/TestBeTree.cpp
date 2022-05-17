@@ -49,7 +49,24 @@ TEST(BeTree, SingleThreadedInsertSmall) {
         tree.insert(i, i);
         std::cout << tree << "\n" << std::endl;
     }
-    for (uint64_t i = 0; i < 50; i++) {
+    for (uint64_t i = 0; i < 120; i++) {
+        auto find = tree.find(i);
+        ASSERT_TRUE(find);
+        ASSERT_EQ(*find, i);
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, SingleThreadedInsertSmallReversed) {
+    setup();
+    //ForSingleThreadedInsertSmall<90>::iteration<10>();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    for (uint64_t i = 120; i > 0; i--) {
+        tree.insert(i - 1, i - 1);
+        std::cout << tree << "\n" << std::endl;
+    }
+    for (uint64_t i = 0; i < 120; i++) {
         auto find = tree.find(i);
         ASSERT_TRUE(find);
         ASSERT_EQ(*find, i);
@@ -66,11 +83,32 @@ TEST(BeTree, SingleThreadedInsertSmallRandom) {
     shuffle(inserts.begin(), inserts.end(), default_random_engine());
     for (uint64_t i : inserts) {
         tree.insert(i, i);
-        std::cout << tree << "\n" << std::endl;
+        //std::cout << tree << "\n" << std::endl;
     }
-    for (uint64_t i = 0; i < 50; i++) {
+    for (uint64_t i = 0; i < 120; i++) {
         auto find = tree.find(i);
         ASSERT_TRUE(find);
         ASSERT_EQ(*find, i);
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, SingleThreadedInsertLargeRandom) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    vector<uint64_t> inserts(5000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    for (uint64_t i : inserts) {
+        tree.insert(i, i);
+        //std::cout << "inserted " << i << std::endl;
+        //std::cout << tree << "\n" << std::endl;
+    }
+    for (uint64_t i = 0; i < 5000; i++) {
+        auto find = tree.find(i);
+        ASSERT_TRUE(find);
+        ASSERT_EQ(*find, i);
+        std::cout << "found " << i << std::endl;
     }
 }

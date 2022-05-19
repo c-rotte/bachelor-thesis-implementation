@@ -47,7 +47,8 @@ TEST(BeTree, SingleThreadedInsertSmall) {
     BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
     for (uint64_t i = 0; i < 120; i++) {
         tree.insert(i, i);
-        std::cout << tree << "\n" << std::endl;
+        std::cout << tree << "\n"
+                  << std::endl;
     }
     for (uint64_t i = 0; i < 120; i++) {
         auto find = tree.find(i);
@@ -64,7 +65,8 @@ TEST(BeTree, SingleThreadedInsertSmallReversed) {
     BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
     for (uint64_t i = 120; i > 0; i--) {
         tree.insert(i - 1, i - 1);
-        std::cout << tree << "\n" << std::endl;
+        std::cout << tree << "\n"
+                  << std::endl;
     }
     for (uint64_t i = 0; i < 120; i++) {
         auto find = tree.find(i);
@@ -81,11 +83,31 @@ TEST(BeTree, SingleThreadedInsertSmallRandom) {
     vector<uint64_t> inserts(120);
     iota(inserts.begin(), inserts.end(), 0);
     shuffle(inserts.begin(), inserts.end(), default_random_engine());
-    for (uint64_t i : inserts) {
+    for (uint64_t i: inserts) {
         tree.insert(i, i);
         //std::cout << tree << "\n" << std::endl;
     }
     for (uint64_t i = 0; i < 120; i++) {
+        auto find = tree.find(i);
+        ASSERT_TRUE(find);
+        ASSERT_EQ(*find, i);
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, SingleThreadedInsertBigRandom) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    vector<uint64_t> inserts(5000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    for (uint64_t i: inserts) {
+        tree.insert(i, i);
+        //std::cout << "inserted " << i << std::endl;
+        //std::cout << tree << "\n" << std::endl;
+    }
+    for (uint64_t i = 0; i < 5000; i++) {
         auto find = tree.find(i);
         ASSERT_TRUE(find);
         ASSERT_EQ(*find, i);
@@ -97,18 +119,53 @@ TEST(BeTree, SingleThreadedInsertLargeRandom) {
     constexpr size_t BLOCK_SIZE = 256;
     constexpr size_t PAGE_AMOUNT = 100;
     BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
-    vector<uint64_t> inserts(5000);
+    vector<uint64_t> inserts(50000);
     iota(inserts.begin(), inserts.end(), 0);
     shuffle(inserts.begin(), inserts.end(), default_random_engine());
-    for (uint64_t i : inserts) {
+    for (uint64_t i: inserts) {
         tree.insert(i, i);
         //std::cout << "inserted " << i << std::endl;
         //std::cout << tree << "\n" << std::endl;
     }
-    for (uint64_t i = 0; i < 5000; i++) {
+    for (uint64_t i = 0; i < 50000; i++) {
         auto find = tree.find(i);
         ASSERT_TRUE(find);
         ASSERT_EQ(*find, i);
-        std::cout << "found " << i << std::endl;
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, MultiThreadedInsertLargeRandom) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    vector<uint64_t> inserts(50000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    ThreadPool threadPool(32);
+    vector<future<void>> calls;
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                tree.insert(i, i);
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+    }
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                auto find = tree.find(i);
+                ASSERT_TRUE(find);
+                ASSERT_EQ(*find, i);
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
     }
 }

@@ -218,7 +218,9 @@ TEST(BeTreeMethods, removeMessages) {
             additionalUpserts.push_back(std::move(upsert));
         }
 
-        BeTreeT::MessageMap messageMap = tree.removeMessages(innerNode, additionalUpserts);
+        BeTreeT::MessageMap messageMap = tree.removeMessages(
+                innerNode, additionalUpserts,
+                BeTreeT::BeNodeWrapperT::NodeSizesT::LEAF_N / 2);
         ASSERT_EQ(messageMap.size(), 1);
         ASSERT_EQ(messageMap[2].size(), 4);
         const vector<uint64_t> expectedUpserts = {8, 10, 11, 12};

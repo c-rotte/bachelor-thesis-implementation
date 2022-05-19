@@ -397,15 +397,22 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             // base case: we arrived at the leaf level
             auto& leafChild = accessNode(childPage).asLeaf();
             // count the future node size
-            std::size_t futureSize = leafChild.size;
+            // TODO: reorder deletes + inserts to prevent an unnecessary split
+            bool needToSplit = false;
+            long long futureSize = leafChild.size;
             for (const auto& upsert: vector) {
                 futureSize += (upsert.type == UpsertType::INSERT);
                 futureSize -= (upsert.type == UpsertType::DELETE);
+                futureSize = std::max(futureSize, 0LL);
+                if(static_cast<std::size_t>(futureSize) > leafChild.keys.size()){
+                    needToSplit = true;
+                    break;
+                }
             }
             std::optional<SplitResult> rightSplitResult;
             //std::cout << "inserts=" << (futureSize - leafChild.size) << std::endl;
             //std::cout << "futureSize=" << futureSize << " leafChild.keys.size()=" << leafChild.keys.size() << std::endl;
-            if (futureSize > leafChild.keys.size()) {
+            if (needToSplit) {
                 // we need to split the leaf
                 K middleKey;
                 // <rightPage> is automatically uniquely pinned
@@ -508,7 +515,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             }
             auto& targetNode = accessNode(*targetPage).asLeaf();
             //std::cout << "targetNode.size=" << targetNode.size << std::endl;
-            assert(targetNode.size < targetNode.keys.size());
             // search for the key index
             auto keyIt = std::lower_bound(targetNode.keys.begin(),
                                           targetNode.keys.begin() + targetNode.size,
@@ -517,10 +523,13 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             if (upsert.type == UpsertType::DELETE) {
                 // the key must exist
                 assert(keyIndex < targetNode.size && * keyIt == upsert.key);
-                // delete the key (shift [index; end) one to the left)
+                // delete the entry (shift [index; end) one to the left)
                 std::move(targetNode.keys.begin() + keyIndex + 1,
                           targetNode.keys.begin() + targetNode.size,
                           targetNode.keys.begin() + keyIndex);
+                std::move(targetNode.values.begin() + keyIndex + 1,
+                          targetNode.values.begin() + targetNode.size,
+                          targetNode.values.begin() + keyIndex);
                 // adjust the size
                 targetNode.size--;
                 continue;
@@ -533,6 +542,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 continue;
             }
             if (upsert.type == UpsertType::INSERT) {
+                assert(targetNode.size < targetNode.keys.size());
                 assert(keyIndex < targetNode.keys.size() && *keyIt != upsert.key);
                 // insert the key,value
                 std::move_backward(targetNode.keys.begin() + keyIndex,
@@ -804,20 +814,21 @@ void BeTree<K, V, B, N, EPSILON>::erase(const K& key) {
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
-    std::vector<V> accumulatedUpdates;
+    std::deque<V> accumulatedUpdates;
     std::optional<V> currentValue;
     PageT* currentPage = &pageBuffer.pinPage(header.rootID, false);
     while (!accessNode(*currentPage).isLeaf()) {
         auto& innerNode = accessNode(*currentPage).asInner();
-        // find the last element of the message block
-        auto lastIt = std::upper_bound(innerNode.upserts.upserts.begin(),
-                                       innerNode.upserts.upserts.begin() + innerNode.upserts.size,
-                                       key);
-        // <lastIt> points to the first element greater than <key>
-        std::vector<V> localUpdates;
+        // find the first element of the message block
+        auto firstIt = std::lower_bound(innerNode.upserts.upserts.begin(),
+                                        innerNode.upserts.upserts.begin() + innerNode.upserts.size,
+                                        key);
         bool deleted = false;
-        for (; lastIt != innerNode.upserts.upserts.begin() && (lastIt - 1)->key == key; --lastIt) {
-            const Upsert<K, V>& upsert = *(lastIt - 1);
+        std::vector<V> localUpdates;
+        for (; firstIt != innerNode.upserts.upserts.begin() + innerNode.upserts.size &&
+               firstIt->key == key;
+             ++firstIt) {
+            const Upsert<K, V>& upsert = *firstIt;
             if (upsert.type == UpsertType::DELETE) {
                 localUpdates.clear();
                 currentValue = std::nullopt;
@@ -838,7 +849,7 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         if (deleted) {
             accumulatedUpdates.clear();
         }
-        std::move(localUpdates.rbegin(), localUpdates.rend(), std::back_inserter(accumulatedUpdates));
+        std::move(localUpdates.begin(), localUpdates.end(), std::front_inserter(accumulatedUpdates));
         if (deleted || currentValue) {
             // new insert or new delete -> break
             pageBuffer.unpinPage(currentPage->id, false);
@@ -853,6 +864,13 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         pageBuffer.unpinPage(currentPage->id, false);
         currentPage = nextPage;
     }
+    /*
+    std::cout << key << " accumulated updates:";
+    for (const auto& v: accumulatedUpdates) {
+        std::cout << " " << v;
+    }
+    std::cout << std::endl;
+    */
     if (currentPage) {
         // leaf
         if (!currentValue) {
@@ -861,17 +879,17 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
             auto childIt = std::lower_bound(leafNode.keys.begin(),
                                             leafNode.keys.begin() + leafNode.size,
                                             key);
-            if (*childIt == key) {
+            const std::size_t index = childIt - leafNode.keys.begin();
+            if (index < leafNode.size && * childIt == key) {
                 currentValue = leafNode.values[childIt - leafNode.keys.begin()];
             }
         }
         pageBuffer.unpinPage(currentPage->id, false);
-    } else {
-        // inserted or deleted (deleted -> accumulatedUpdates is empty)
-        for (auto it = accumulatedUpdates.rbegin(); it != accumulatedUpdates.rend(); ++it) {
-            assert(currentValue);
-            (*currentValue) += *it;
-        }
+    }
+    // inserted or deleted (deleted -> accumulatedUpdates is empty)
+    for (const auto& updateValue: accumulatedUpdates) {
+        assert(currentValue);
+        (*currentValue) += updateValue;
     }
     return currentValue;
 }
@@ -918,7 +936,7 @@ std::ostream& operator<<(std::ostream& out, BeTree<K, V, B, N, EPSILON>& tree) {
                 if (innerNode.upserts.upserts[i].type == 0) {
                     std::cout << "INSERT";
                 } else if (innerNode.upserts.upserts[i].type == 1) {
-                    std::cout << "UPSERT";
+                    std::cout << "UPDATE";
                 } else if (innerNode.upserts.upserts[i].type == 2) {
                     std::cout << "DELETE";
                 } else {

@@ -153,6 +153,12 @@ class BeTree {
     static_assert(sizeof(BeNodeWrapperT) == B);
     static_assert(alignof(BeNodeWrapperT) == alignof(PageT));
 
+    // (LEAF_N / 2) must be an upper bound to enable
+    // preemptive splitting
+    static const std::size_t MAX_FLUSH_SIZE = std::min(
+            BeNodeWrapperT::NodeSizesT::LEAF_N / 2,
+            BeNodeWrapperT::NodeSizesT::INNER_B_N);
+
     struct alignas(alignof(std::max_align_t)) Header {
         std::uint64_t rootID = 0;
         std::atomic_uint32_t currentTimeStamp = 0;
@@ -563,7 +569,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             // remove its messages
             auto messageMap = std::move(removeMessages(
                     innerChild, std::move(vector),
-                    BeNodeWrapperT::NodeSizesT::LEAF_N / 2));
+                    MAX_FLUSH_SIZE));
             if (innerChild.pivots.size() - innerChild.size < messageMap.size()) {
                 // we need to split the child
                 K middleKey;
@@ -690,7 +696,7 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
         auto& rootNode = accessNode(*rootPage).asInner();
         auto messageMap = std::move(removeMessages(
                 rootNode, {std::move(message)},
-                BeNodeWrapperT::NodeSizesT::LEAF_N / 2));
+                MAX_FLUSH_SIZE));
         // check if the root needs slots for the potential splits of the children
         if (rootNode.pivots.size() - rootNode.size < messageMap.size()) {
             // we need to create a new root

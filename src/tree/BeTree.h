@@ -834,13 +834,19 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
                                   upsert.key);
     std::size_t keyIndex = keyIt - leafNode.keys.begin();
     if (upsert.type == UpsertType::DELETE) {
-        // the key must exist
-        assert(keyIt != leafNode.keys.end());
-        assert(*keyIt == upsert.key);
+        if (keyIndex >= leafNode.size || *keyIt != upsert.key) {
+            // the key does not exist -> continue
+            // unpin the leaf node
+            pageBuffer.unpinPage(rootPage->id, false);
+            return;
+        }
         // delete the key (shift [index; end) one to the left)
         std::move(leafNode.keys.begin() + keyIndex + 1,
                   leafNode.keys.begin() + leafNode.size,
                   leafNode.keys.begin() + keyIndex);
+        std::move(leafNode.values.begin() + keyIndex + 1,
+                  leafNode.values.begin() + leafNode.size,
+                  leafNode.values.begin() + keyIndex);
         // adjust the size
         leafNode.size--;
         // unpin the leaf node
@@ -848,20 +854,25 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
         return;
     }
     if (upsert.type == UpsertType::UPDATE) {
-        // the key must exist
-        assert(keyIt != leafNode.keys.end());
-        assert(*keyIt == upsert.key);
+        if (keyIndex >= leafNode.size || *keyIt != upsert.key) {
+            // the key does not exist -> continue
+            pageBuffer.unpinPage(rootPage->id, false);
+            return;
+        }
         // update the key
         leafNode.values[keyIndex] += upsert.value;
         pageBuffer.unpinPage(rootPage->id, true);
         return;
     }
     if (upsert.type == UpsertType::INSERT) {
-        if (keyIndex < leafNode.size) {
-            // the key must not exist
-            assert(*keyIt != upsert.key);
+        if (keyIndex < leafNode.size && * keyIt == upsert.key) {
+            // the key does already exist -> overwrite
+            leafNode.values[keyIndex] = std::move(upsert.value);
+            pageBuffer.unpinPage(rootPage->id, true);
+            return;
         }
         auto* targetPage = rootPage;// page which will receive the insert
+        assert(leafNode.size <= leafNode.keys.size());
         if (leafNode.size == leafNode.keys.size()) {
             // full leaf -> split it
             K middleKey;

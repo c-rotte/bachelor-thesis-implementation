@@ -174,7 +174,6 @@ TEST(BeTree, SingleThreadedUpdateSmallRandom) {
         tree.update(i, i);
         tree.update(i, 1);
     }
-    std::cout << "\n" << tree << "\n" << std::endl;
     for (uint64_t i = 0; i < 120; i++) {
         auto find = tree.find(i);
         ASSERT_TRUE(find);
@@ -354,6 +353,134 @@ TEST(BeTree, MultiThreadedDeleteLargeRandom) {
             calls.emplace_back(threadPool.enqueue([&tree, i]() {
                 auto find = tree.find(i);
                 ASSERT_FALSE(find);
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, SingleThreadedDuplicatesSmallRandom)
+// assumptions:
+// INSERT overwrites existing entries
+// UPDATE does nothing if there is no entry
+// DELETE does nothing if there is no entry
+{
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    vector<uint64_t> inserts(120);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    for (uint64_t i: inserts) {
+        tree.insert(i, i);
+        tree.update(i, 1);
+        tree.insert(i, i);
+        tree.update(i, 1);
+        if (i % 2 == 0) {
+            tree.erase(i);
+            tree.erase(i);
+        }
+    }
+    for (uint64_t i = 0; i < 120; i++) {
+        auto find = tree.find(i);
+        if (i % 2 == 0) {
+            ASSERT_FALSE(find);
+        } else {
+            ASSERT_TRUE(find);
+            ASSERT_EQ(*find, i + 1);
+        }
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, MultiThreadedDuplicatesBigRandom) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    vector<uint64_t> inserts(5000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    ThreadPool threadPool(32);
+    vector<future<void>> calls;
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                tree.insert(i, i);
+                tree.update(i, 1);
+                tree.insert(i, i);
+                tree.update(i, 1);
+                if (i % 2 == 0) {
+                    tree.erase(i);
+                    tree.erase(i);
+                }
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+    }
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                auto find = tree.find(i);
+                if (i % 2 == 0) {
+                    ASSERT_FALSE(find);
+                } else {
+                    ASSERT_TRUE(find);
+                    ASSERT_EQ(*find, i + 1);
+                }
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, MultiThreadedDuplicatesLargeRandom) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+    vector<uint64_t> inserts(50000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    ThreadPool threadPool(32);
+    vector<future<void>> calls;
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                tree.insert(i, i);
+                tree.update(i, 1);
+                tree.insert(i, i);
+                tree.update(i, 1);
+                if (i % 2 == 0) {
+                    tree.erase(i);
+                    tree.erase(i);
+                }
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+        calls.clear();
+    }
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                auto find = tree.find(i);
+                if (i % 2 == 0) {
+                    ASSERT_FALSE(find);
+                } else {
+                    ASSERT_TRUE(find);
+                    ASSERT_EQ(*find, i + 1);
+                }
             }));
         }
         for (auto& call: calls) {

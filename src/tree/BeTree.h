@@ -817,7 +817,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
             return;
         }
         // update the key
-        leafNode.values[keyIndex] += upsert.value;
+        leafNode.values[keyIndex] += std::move(upsert.value);
         pageBuffer.unpinPage(rootPage->id, true);
         return;
     }
@@ -994,9 +994,9 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         pageBuffer.unpinPage(currentPage->id, false);
     }
     // inserted or deleted (deleted -> accumulatedUpdates is empty)
-    for (const auto& updateValue: accumulatedUpdates) {
+    for (auto& updateValue: accumulatedUpdates) {
         assert(currentValue);
-        (*currentValue) += updateValue;
+        (*currentValue) += std::move(updateValue);
     }
     return currentValue;
 }

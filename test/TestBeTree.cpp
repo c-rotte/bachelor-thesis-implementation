@@ -174,6 +174,7 @@ TEST(BeTree, SingleThreadedUpdateSmallRandom) {
         tree.update(i, i);
         tree.update(i, 1);
     }
+    std::cout << "\n" << tree << "\n" << std::endl;
     for (uint64_t i = 0; i < 120; i++) {
         auto find = tree.find(i);
         ASSERT_TRUE(find);
@@ -297,7 +298,6 @@ TEST(BeTree, SingleThreadedDeleteBigRandom) {
         tree.update(i, 2);
         tree.erase(i);
     }
-    std::cout << tree << "\n" << std::endl;
     for (uint64_t i = 0; i < 5000; i++) {
         auto find = tree.find(i);
         ASSERT_FALSE(find);

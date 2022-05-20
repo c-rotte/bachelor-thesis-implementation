@@ -12,4 +12,6 @@ add_clang_tidy_target(lint_b_epsilon_core ${B_EPSILON_SOURCES})
 add_dependencies(lint lint_b_epsilon_core)
 
 add_executable(b_epsilon main.cpp)
-target_link_libraries(b_epsilon PUBLIC b_epsilon_core)
+target_link_libraries(b_epsilon
+        PUBLIC b_epsilon_core
+        PRIVATE TBB::tbb)

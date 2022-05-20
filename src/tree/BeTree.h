@@ -6,12 +6,15 @@
 #include <algorithm>
 #include <atomic>
 #include <cinttypes>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <execution>
 #include <fcntl.h>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <new>
 #include <numeric>
 #include <optional>
@@ -21,6 +24,120 @@
 #include <vector>
 // --------------------------------------------------------------------------
 namespace {
+// --------------------------------------------------------------------------
+template<class Iterator>
+requires std::bidirectional_iterator<Iterator>
+std::size_t squashUpserts(Iterator begin, Iterator end)
+// squashes [begin; end), moves it to [begin and returns the new range size
+{
+    assert(end >= begin);
+    auto accumulate = [](Iterator begin, Iterator end)
+    // accumulate squashes message blocks (same key) into single upserts
+    // according to the following rules:
+    // II -> I
+    // IU -> I
+    // ID -> D
+    // UI -> I
+    // UU -> U
+    // UD -> D
+    // DI -> I
+    // DU -> D
+    // DD -> D
+    {
+        auto initialValue = *begin;
+        initialValue.type = tree::UpsertType::INVALID;
+        return std::reduce(
+                std::execution::par_unseq, begin, end, std::move(initialValue),
+                [](const auto& upsertA, const auto& upsertB) {
+                    // invalid
+                    if (upsertA.type == tree::UpsertType::INVALID) {
+                        return upsertB;
+                    }
+                    if (upsertB.type == tree::UpsertType::INVALID) {
+                        return upsertA;
+                    }
+                    if (upsertA.type == tree::UpsertType::INSERT) {
+                        if (upsertB.type == tree::UpsertType::INSERT) {
+                            // II -> I
+                            auto result = upsertB;
+                            return result;
+                        }
+                        if (upsertB.type == tree::UpsertType::UPDATE) {
+                            // IU -> I
+                            auto result = upsertA;
+                            result.timeStamp = upsertB.timeStamp;
+                            result.value += upsertB.value;
+                            return result;
+                        }
+                        if (upsertB.type == tree::UpsertType::DELETE) {
+                            // ID -> D
+                            return upsertB;
+                        }
+                    }
+                    if (upsertA.type == tree::UpsertType::UPDATE) {
+                        if (upsertB.type == tree::UpsertType::INSERT) {
+                            // UI -> I
+                            auto result = upsertB;
+                            return result;
+                        }
+                        if (upsertB.type == tree::UpsertType::UPDATE) {
+                            // UU -> U
+                            auto result = upsertB;
+                            result.value = upsertA.value + upsertB.value;
+                            return result;
+                        }
+                        if (upsertB.type == tree::UpsertType::DELETE) {
+                            // UD -> D
+                            return upsertB;
+                        }
+                    }
+                    if (upsertA.type == tree::UpsertType::DELETE) {
+                        if (upsertB.type == tree::UpsertType::INSERT) {
+                            // DI -> I
+                            auto result = upsertB;
+                            return result;
+                        }
+                        if (upsertB.type == tree::UpsertType::UPDATE) {
+                            // DU -> D
+                            auto result = upsertA;
+                            return result;
+                        }
+                        if (upsertB.type == tree::UpsertType::DELETE) {
+                            // DD -> D
+                            return upsertB;
+                        }
+                    }
+                    // we should never reach this
+                    assert(false);
+                    return upsertA;
+                });
+    };
+    // this is where we insert the accumulated messages
+    auto currentSlot = begin;
+    // start of our current messageBlock
+    auto lastBegin = begin;
+    for (auto it = begin; it != end; ++it) {
+        Iterator currentBegin, currentEnd;
+        if (lastBegin->key != it->key) {
+            currentBegin = lastBegin;
+            currentEnd = it;
+            // set lastBegin
+            lastBegin = it;
+        } else {
+            continue;
+        }
+        assert(currentBegin->key == (currentEnd - 1)->key);
+        // found a block, accumulate the block
+        *currentSlot = accumulate(currentBegin, currentEnd);
+        ++currentSlot;
+    }
+    if (currentSlot != end) {
+        assert(lastBegin->key == (end - 1)->key);
+        *currentSlot = accumulate(lastBegin, end);
+        ++currentSlot;
+    }
+    return currentSlot - begin;
+}
 // --------------------------------------------------------------------------
 }// namespace
 // --------------------------------------------------------------------------
@@ -269,6 +386,8 @@ BeTree<K, V, B, N, EPSILON>::removeMessages(
                additionalUpserts.begin(),
                additionalUpserts.end(),
                std::back_inserter(allMessages));
+    // squash the messages
+    allMessages.resize(squashUpserts(allMessages.begin(), allMessages.end()));
     // now scan all messages for blocks
     // first index, last index (exclusive), child index
     using BlockTuple = std::tuple<std::size_t, std::size_t, std::size_t>;
@@ -391,20 +510,27 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
         */
         assert(childIndex <= currentNode.size);
         assert(std::is_sorted(vector.begin(), vector.end()));
+        // squash the message vector
+        vector.resize(squashUpserts(vector.begin(), vector.end()));
+        // pin the child
         PageT& childPage = pageBuffer.pinPage(
                 currentNode.children[childIndex], true);
         if (accessNode(childPage).isLeaf()) {
             // base case: we arrived at the leaf level
             auto& leafChild = accessNode(childPage).asLeaf();
             // count the future node size
-            // TODO: reorder deletes + inserts to prevent an unnecessary split
             bool needToSplit = false;
             long long futureSize = leafChild.size;
             for (const auto& upsert: vector) {
-                futureSize += (upsert.type == UpsertType::INSERT);
-                futureSize -= (upsert.type == UpsertType::DELETE);
+                auto it = std::lower_bound(leafChild.keys.begin(),
+                                           leafChild.keys.begin() + leafChild.size, upsert.key);
+                bool foundKey = static_cast<std::size_t>(leafChild.keys.begin() - it) <
+                                        leafChild.size &&
+                                * it == upsert.key;
+                futureSize += (upsert.type == UpsertType::INSERT && !foundKey);
+                futureSize -= (upsert.type == UpsertType::DELETE && foundKey);
                 futureSize = std::max(futureSize, 0LL);
-                if(static_cast<std::size_t>(futureSize) > leafChild.keys.size()){
+                if (static_cast<std::size_t>(futureSize) > leafChild.keys.size()) {
                     needToSplit = true;
                     break;
                 }
@@ -426,7 +552,14 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
         } else {
             // the children are inner nodes
             auto& innerChild = accessNode(childPage).asInner();
+            if (innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
+                // squash the child
+                innerChild.upserts.size = squashUpserts(innerChild.upserts.upserts.begin(),
+                                                        innerChild.upserts.upserts.begin() +
+                                                                innerChild.upserts.size);
+            }
             //std::cout << "buffering... " << (innerChild.upserts.upserts.size() - innerChild.upserts.size) << " vs " << vector.size() << std::endl;
+            // check again if there are enough free slots
             if (innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
                 // the child has enough space for its addressed messages
                 // -> store them and continue
@@ -521,8 +654,10 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                                           upsert.key);
             const std::size_t keyIndex = keyIt - targetNode.keys.begin();
             if (upsert.type == UpsertType::DELETE) {
-                // the key must exist
-                assert(keyIndex < targetNode.size && * keyIt == upsert.key);
+                if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
+                    // the key does not exist -> continue
+                    continue;
+                }
                 // delete the entry (shift [index; end) one to the left)
                 std::move(targetNode.keys.begin() + keyIndex + 1,
                           targetNode.keys.begin() + targetNode.size,
@@ -535,13 +670,20 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 continue;
             }
             if (upsert.type == UpsertType::UPDATE) {
-                // the key must exist
-                assert(keyIndex < targetNode.size && * keyIt == upsert.key);
+                if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
+                    // the key does not exist -> continue
+                    continue;
+                }
                 // update the key
                 targetNode.values[keyIndex] += upsert.value;
                 continue;
             }
             if (upsert.type == UpsertType::INSERT) {
+                if (keyIndex < targetNode.size && * keyIt == upsert.key) {
+                    // the key does already exist -> overwrite
+                    targetNode.values[keyIndex] = std::move(upsert.value);
+                    continue;
+                }
                 assert(targetNode.size < targetNode.keys.size());
                 assert(keyIndex < targetNode.keys.size() && *keyIt != upsert.key);
                 // insert the key,value
@@ -652,6 +794,13 @@ void BeTree<K, V, B, N, EPSILON>::handleRootInnerUpsert(Upsert<K, V> upsert, Pag
     // must be an inner node
     assert(!accessNode(*rootPage).isLeaf());
     auto& innerNode = accessNode(*rootPage).asInner();
+    if (innerNode.upserts.size < innerNode.upserts.upserts.size()) {
+        // squash the buffer
+        innerNode.upserts.size = squashUpserts(innerNode.upserts.upserts.begin(),
+                                               innerNode.upserts.upserts.begin() +
+                                                       innerNode.upserts.size);
+    }
+    // check again if there are enough free slots
     if (innerNode.upserts.size < innerNode.upserts.upserts.size()) {
         // there is enough space in the root, insert sorted
         auto it = std::lower_bound(innerNode.upserts.upserts.begin(),

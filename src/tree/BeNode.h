@@ -16,6 +16,7 @@ struct UpsertType {
     static const unsigned char INSERT = 0;
     static const unsigned char UPDATE = 1;
     static const unsigned char DELETE = 2;
+    static const unsigned char INVALID = 3;
 };
 // --------------------------------------------------------------------------
 template<class K, class V>

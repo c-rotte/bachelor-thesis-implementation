@@ -24,7 +24,7 @@ struct Upsert {
     K key;
     V value;// don't wrap it into an optional to save space
     std::uint32_t timeStamp = -1;
-    unsigned char type;
+    unsigned char type = UpsertType::INVALID;
 
     auto operator<=>(const Upsert&) const;
     auto operator<=>(const K&) const;
@@ -167,7 +167,6 @@ BeNodeWrapper<K, V, PAGE_SIZE, EPSILON>::BeNodeWrapper(bool leaf) : leaf(leaf) {
     } else {
         new (data.data()) BeInnerNodeT;
     }
-    //std::cout << NodeSizesT::LEAF_N << " " << NodeSizesT::INNER_B_N << " " << NodeSizesT::INNER_N << std::endl;
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t PAGE_SIZE, short EPSILON>

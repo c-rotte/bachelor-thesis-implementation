@@ -185,8 +185,7 @@ private:
     void insertPivots(typename BeNodeWrapperT::BeInnerNodeT&,
                       std::vector<std::tuple<std::size_t, K, std::uint64_t>>);
     FRIEND_TEST(BeTreeMethods, insertPivots);
-    // sorts the messages and returns a vector of indexes (which point to the
-    // removed message blocks returned in the reference)
+    // removes message blocks and returns a message map
     using MessageMap = std::unordered_map<std::size_t, std::vector<Upsert<K, V>>>;
     MessageMap removeMessages(typename BeNodeWrapperT::BeInnerNodeT&,
                               std::vector<Upsert<K, V>>, std::size_t);
@@ -197,17 +196,25 @@ private:
     void flushRootNode(PageT*, Upsert<K, V>);
     void handleRootInnerUpsert(Upsert<K, V>, PageT*);
     void handleRootLeafUpsert(Upsert<K, V>, PageT*);
-    // inserts a message
+    // inserts an upsert
     void upsert(Upsert<K, V>);
 
 public:
+    // inserts (K,V)
+    // note: if K already exists, it will get overwritten
     void insert(K, V);
+    // updates (K,V_old) with V_old += V
+    // note: does nothing if K does not exist
     void update(K, V);
+    // removes K
+    // note: does nothing if K does not exist
     void erase(const K&);
+    // attempts to find (K,V) and returns V
     std::optional<V> find(const K&);
-
+    // saves the tree
     void flush();
-
+    // prints out the tree (dot language)
+    // note: this makes use of the page buffer
     template<class K_O, class V_O, std::size_t B_O, std::size_t N_O, short EPSILON_O>
     friend std::ostream& operator<<(std::ostream&, BeTree<K_O, V_O, B_O, N_O, EPSILON_O>&);
 };
@@ -251,7 +258,7 @@ template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 typename BeTree<K, V, B, N, EPSILON>::PageT&
 BeTree<K, V, B, N, EPSILON>::splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT& leafNode,
                                            K& resultKey) {
-    assert(leafNode.size >= 2);// maybe >= 1
+    assert(leafNode.size >= 2);
     const std::size_t splitIndex = (leafNode.size - 1) / 2;
     resultKey = leafNode.keys[splitIndex];
     // create a new leaf node
@@ -276,7 +283,7 @@ template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 typename BeTree<K, V, B, N, EPSILON>::PageT&
 BeTree<K, V, B, N, EPSILON>::splitInnerNode(typename BeNodeWrapperT::BeInnerNodeT& innerNode,
                                             K& resultKey) {
-    assert(innerNode.size >= 2);// maybe >= 1
+    assert(innerNode.size >= 2);
     const std::size_t splitIndex = (innerNode.size - 1) / 2;
     resultKey = innerNode.pivots[splitIndex];
     // create a new inner node
@@ -337,13 +344,6 @@ void BeTree<K, V, B, N, EPSILON>::insertPivots(typename BeNodeWrapperT::BeInnerN
         assert(index + it - 1 < innerNode.pivots.size());
         assert(lastFirst + it <= innerNode.pivots.size());
         // move everything to the right
-        /*
-        std::cout << "it=" << it << " index=" << index << " lastFirst=" << lastFirst << std::endl;
-        for (std::size_t i = 0; i < innerNode.size + newPivots.size(); i++) {
-            std::cout << innerNode.pivots[i] << " ";
-        }
-        std::cout << std::endl;
-        */
         std::move_backward(innerNode.pivots.begin() + index,
                            innerNode.pivots.begin() + lastFirst,
                            innerNode.pivots.begin() + lastFirst + it);
@@ -353,12 +353,6 @@ void BeTree<K, V, B, N, EPSILON>::insertPivots(typename BeNodeWrapperT::BeInnerN
         // insert the pivot and its child
         innerNode.pivots[index + it - 1] = key;
         innerNode.children[index + it] = child;
-        /*
-        for (std::size_t i = 0; i < innerNode.size + newPivots.size(); i++) {
-            std::cout << innerNode.pivots[i] << " ";
-        }
-        std::cout << std::endl;
-        */
         lastFirst = index;
     }
     // adjust the size
@@ -500,14 +494,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
     using SplitResult = std::pair<K, PageT*>;
     std::vector<std::tuple<PageT*, std::optional<SplitResult>, std::vector<Upsert<K, V>>>> leafMessages;
     for (auto& [childIndex, vector]: messageMap) {
-        /*
-        std::cout << currentPage->id << ": currently at childIndex " << childIndex << std::endl;
-        std::cout << "children: ";
-        for(int i = 0; i < currentNode.size + 1; i++){
-            std::cout << " " << currentNode.children[i];
-        }
-        std::cout << std::endl;
-        */
         assert(childIndex <= currentNode.size);
         assert(std::is_sorted(vector.begin(), vector.end()));
         // squash the message vector
@@ -536,8 +522,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 }
             }
             std::optional<SplitResult> rightSplitResult;
-            //std::cout << "inserts=" << (futureSize - leafChild.size) << std::endl;
-            //std::cout << "futureSize=" << futureSize << " leafChild.keys.size()=" << leafChild.keys.size() << std::endl;
             if (needToSplit) {
                 // we need to split the leaf
                 K middleKey;
@@ -558,7 +542,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                                                         innerChild.upserts.upserts.begin() +
                                                                 innerChild.upserts.size);
             }
-            //std::cout << "buffering... " << (innerChild.upserts.upserts.size() - innerChild.upserts.size) << " vs " << vector.size() << std::endl;
             // check again if there are enough free slots
             if (innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
                 // the child has enough space for its addressed messages
@@ -574,7 +557,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                            innerChild.upserts.upserts.begin());
                 innerChild.upserts.size += vector.size();
                 // free the page
-                //std::cout << "3" << std::endl;
                 pageBuffer.unpinPage(childPage.id, true);
                 continue;
             }
@@ -586,19 +568,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 // we need to split the child
                 K middleKey;
                 PageT& rightPage = splitInnerNode(innerChild, middleKey);
-                {
-                    //auto& rightNode = accessNode(rightPage).asInner();
-                    /*
-                    std::cout << "left children: ";
-                    for (int i = 0; i < innerChild.size + 1; i++) {
-                        std::cout << " " << innerChild.children[i];
-                    }
-                    std::cout << "right children: ";
-                    for (int i = 0; i < rightNode.size + 1; i++) {
-                        std::cout << " " << rightNode.children[i];
-                    }
-                     */
-                }
                 newPivots.emplace_back(childIndex, middleKey, rightPage.id);
                 // split the additional messages
                 MessageMap leftMap, rightMap;
@@ -635,7 +604,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
               });
     insertPivots(currentNode, std::move(newPivots));
     // unlock the parent
-    //std::cout << "5" << std::endl;
     pageBuffer.unpinPage(currentPage->id, true);
     // now handle the leaf messages (if there are any)
     for (auto& [childPage, splitResult, vector]: leafMessages) {
@@ -647,7 +615,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 targetPage = splitResult->second;
             }
             auto& targetNode = accessNode(*targetPage).asLeaf();
-            //std::cout << "targetNode.size=" << targetNode.size << std::endl;
             // search for the key index
             auto keyIt = std::lower_bound(targetNode.keys.begin(),
                                           targetNode.keys.begin() + targetNode.size,
@@ -693,7 +660,6 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                 std::move_backward(targetNode.values.begin() + keyIndex,
                                    targetNode.values.begin() + targetNode.size,
                                    targetNode.values.begin() + targetNode.size + 1);
-                //std::cout << "inserting " << upsert.key << " at index " << keyIndex << std::endl;
                 targetNode.keys[keyIndex] = upsert.key;
                 targetNode.values[keyIndex] = std::move(upsert.value);
                 targetNode.size++;
@@ -701,10 +667,8 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             }
         }
         // free both the left and right page
-        //std::cout << "1" << std::endl;
         pageBuffer.unpinPage(childPage->id, true);
         if (splitResult) {
-            //std::cout << "2" << std::endl;
             pageBuffer.unpinPage(splitResult->second->id, true);
         }
     }
@@ -729,7 +693,6 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
                 BeNodeWrapperT::NodeSizesT::LEAF_N / 2));
         // check if the root needs slots for the potential splits of the children
         if (rootNode.pivots.size() - rootNode.size < messageMap.size()) {
-            //std::cout << "rootNode.size: " << rootNode.size << std::endl;
             // we need to create a new root
             K midKey;
             PageT& rightPage = splitInnerNode(rootNode, midKey);
@@ -751,13 +714,9 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
             for (auto& [childIndex, vector]: messageMap) {
                 if (childIndex <= newRootNode.size) {
                     assert(!leftMap.count(childIndex));
-                    //std::cout << "childIndex: " << childIndex << std::endl;
                     leftMap[childIndex] = std::move(vector);
                 } else {
-                    //std::cout << "node.size: " << node.size << std::endl;
-                    //std::cout << "left.size: " << newRootNode.size << std::endl;
                     const std::size_t adjustedChildIndex = childIndex - newRootNode.size - 1;
-                    //std::cout << "adjustedChildIndex: " << adjustedChildIndex << std::endl;
                     assert(!rightMap.count(adjustedChildIndex));
                     rightMap[adjustedChildIndex] = std::move(vector);
                 }
@@ -771,16 +730,8 @@ void BeTree<K, V, B, N, EPSILON>::flushRootNode(PageT* rootPage, Upsert<K, V> me
     }
     // main action: level order traversal
     while (!queue.empty()) {
-        /*
-        std::cout << "pages: ";
-        for (const auto& pair: queue) {
-            std::cout << " " << pair.first->id;
-        }
-        std::cout << std::endl;
-        */
         auto [currentPage, messageMap] = std::move(queue.front());
         queue.pop_front();
-        //std::cout << std::endl;
         assert(!accessNode(*currentPage).isLeaf());
         handleTraversalNode(currentPage, std::move(messageMap), queue);
     }
@@ -909,7 +860,6 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
         assert(targetPage != nullptr);
         assert(accessNode(*targetPage).isLeaf());
         auto& targetLeafNode = accessNode(*targetPage).asLeaf();
-        //std::cout << targetLeafNode.size << std::endl;
         // make room for the key (shift [index; end) one to the right)
         std::move(targetLeafNode.keys.begin() + keyIndex,
                   targetLeafNode.keys.begin() + targetLeafNode.size,
@@ -933,11 +883,9 @@ void BeTree<K, V, B, N, EPSILON>::upsert(Upsert<K, V> upsert) {
     PageT* rootPage = &pageBuffer.pinPage(header.rootID, true);
     // first case: the root node is a leaf node (direct insert)
     if (accessNode(*rootPage).isLeaf()) {
-        //std::cout << "leaf " << upsert.key << std::endl;
         handleRootLeafUpsert(std::move(upsert), rootPage);
         return;
     }
-    //std::cout << "inner " << upsert.key << std::endl;
     // second case: the root node is an inner node
     handleRootInnerUpsert(std::move(upsert), rootPage);
 }
@@ -1024,13 +972,6 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         pageBuffer.unpinPage(currentPage->id, false);
         currentPage = nextPage;
     }
-    /*
-    std::cout << key << " accumulated updates:";
-    for (const auto& v: accumulatedUpdates) {
-        std::cout << " " << v;
-    }
-    std::cout << std::endl;
-    */
     if (currentPage) {
         // leaf
         if (!currentValue) {
@@ -1059,6 +1000,7 @@ void BeTree<K, V, B, N, EPSILON>::flush() {
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
         throw std::runtime_error("Could not save the header (tree).");
     }
+    pageBuffer.flush();
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>

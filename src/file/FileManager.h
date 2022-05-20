@@ -27,10 +27,10 @@ class FileManager {
     static_assert(B > sizeof(std::uint64_t));
 
     struct alignas(alignof(std::max_align_t)) Header {
-        std::uint64_t blockSize;
-        std::uint64_t allocatedBlocks;
-        std::uint64_t occupiedBlocks;
-        std::uint64_t deletedBlocks;
+        std::uint64_t blockSize = 0;
+        std::uint64_t allocatedBlocks = 0;
+        std::uint64_t occupiedBlocks = 0;
+        std::uint64_t deletedBlocks = 0;
         std::optional<std::uint64_t> freeNodesHead;
     };
     // use 4096 bytes for the header (operating system block size)

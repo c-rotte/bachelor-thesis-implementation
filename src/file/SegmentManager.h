@@ -109,7 +109,7 @@ SegmentManager<B>::SegmentManager(const std::string& dirPath, double growthFacto
             });
         }
     } else {
-        std::filesystem::create_directory(dirPath);
+        std::filesystem::create_directories(dirPath);
         fd = open(headerFile.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         if (fd < 0) {
             throw std::runtime_error("Could not create the segment file!");

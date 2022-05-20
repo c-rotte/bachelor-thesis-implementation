@@ -6,7 +6,6 @@
 #include <new>
 #include <random>
 #include <ranges>
-#include <unordered_set>
 // --------------------------------------------------------------------------
 using namespace std;
 using namespace tree;
@@ -487,5 +486,31 @@ TEST(BeTree, MultiThreadedDuplicatesLargeRandom) {
             call.get();
         }
         calls.clear();
+    }
+}
+// --------------------------------------------------------------------------
+TEST(BeTree, KeepData) {
+    setup();
+    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t PAGE_AMOUNT = 100;
+    vector<uint64_t> inserts(5000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    {
+        BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+        for (uint64_t i: inserts) {
+            tree.insert(i, i);
+            tree.update(i, i);
+            tree.update(i, 1);
+        }
+        tree.flush();
+    }
+    {
+        BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
+        for (uint64_t i = 0; i < 120; i++) {
+            auto find = tree.find(i);
+            ASSERT_TRUE(find);
+            ASSERT_EQ(*find, 2 * i + 1);
+        }
     }
 }

@@ -1,6 +1,5 @@
 set(TEST_SOURCES
         Tester.cpp
-        TesterUtils.cpp
         TestFileManager.cpp
         TestSegmentManager.cpp
         TestQueue.cpp

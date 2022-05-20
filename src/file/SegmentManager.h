@@ -36,7 +36,8 @@ class SegmentManager {
 
     public:
         explicit Segment(const std::string&, std::size_t = 0);
-        void accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::shared_mutex&)>);
+        void accessFileManager(std::function<void(std::optional<FileManager<B>>&,
+                                                  std::shared_mutex&)>);
     };
 
     // wrap the segment into a unique pointer to keep
@@ -79,7 +80,9 @@ SegmentManager<B>::Segment::Segment(const std::string& filePath, std::size_t all
 }
 // --------------------------------------------------------------------------
 template<std::size_t B>
-void SegmentManager<B>::Segment::accessFileManager(std::function<void(std::optional<FileManager<B>>&, std::shared_mutex&)> func) {
+void SegmentManager<B>::Segment::accessFileManager(std::function<void(std::optional<FileManager<B>>&,
+                                                                      std::shared_mutex&)>
+                                                           func) {
     // the caller is responsible for initializing + locking the fileManager
     func(fileManager, mutex);
 }
@@ -99,7 +102,8 @@ SegmentManager<B>::SegmentManager(const std::string& dirPath, double growthFacto
             auto& segment = *segmentPtr;
             segments.push_back(std::move(segmentPtr));
             // note: initializes the fileManager
-            segment.accessFileManager([this, &segment, i](std::optional<FileManager<B>>& fileManager, std::shared_mutex&) {
+            segment.accessFileManager([this, &segment, i](
+                                              std::optional<FileManager<B>>& fileManager, std::shared_mutex&) {
                 // no need to lock since we are still in a single thread (constructor)
                 // initialize the file manager
                 fileManager = FileManager<B>(segment.filePath, segment.allocatedBlocks);
@@ -142,7 +146,8 @@ std::uint64_t SegmentManager<B>::createBlock() {
         }
         assert(freeSegments.empty());
         header.lastAllocatedBlocks = std::max<std::size_t>(10, header.lastAllocatedBlocks * growthFactor);
-        auto segmentPtr = std::make_unique<Segment>(dirPath + "/" + std::to_string(header.numberOfSegments), header.lastAllocatedBlocks);
+        auto segmentPtr = std::make_unique<Segment>(dirPath + "/" + std::to_string(header.numberOfSegments),
+                                                    header.lastAllocatedBlocks);
         auto& segment = *segmentPtr;
         segments.push_back(std::move(segmentPtr));
         const std::size_t segmentIndex = segments.size() - 1;
@@ -150,7 +155,8 @@ std::uint64_t SegmentManager<B>::createBlock() {
         // now access the segment
         std::size_t blockID;
         segment.accessFileManager([this, &segment, &mainLock, &blockID, segmentIndex](
-                                          std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
+                                          std::optional<FileManager<B>>& fileManager,
+                                          std::shared_mutex& segmentMutex) {
             assert(!fileManager);
             // lock the segment
             std::unique_lock segmentLock(segmentMutex);
@@ -170,7 +176,8 @@ std::uint64_t SegmentManager<B>::createBlock() {
     auto& segment = *segments.at(segmentIndex);
     std::size_t blockID;
     segment.accessFileManager([this, &mainLock, segmentIndex, &blockID](
-                                      std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
+                                      std::optional<FileManager<B>>& fileManager,
+                                      std::shared_mutex& segmentMutex) {
         // lock the segment
         std::unique_lock segmentLock(segmentMutex);
         assert(fileManager);
@@ -197,7 +204,8 @@ void SegmentManager<B>::deleteBlock(std::uint64_t id) {
     auto& segment = segments.at(segmentIndex);
     // access the segment
     segment->accessFileManager([this, &mainLock, blockID, segmentIndex](
-                                       std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
+                                       std::optional<FileManager<B>>& fileManager,
+                                       std::shared_mutex& segmentMutex) {
         // lock the segment
         std::unique_lock segmentLock(segmentMutex);
         assert(fileManager);
@@ -221,8 +229,9 @@ std::array<unsigned char, B> SegmentManager<B>::readBlock(std::uint64_t id) {
     // unlock the segment manager
     mainLock.unlock();
     std::optional<std::array<unsigned char, B>> result;
-    segment.accessFileManager([&mainLock, &result, blockID](
-                                      std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
+    segment.accessFileManager([&result, blockID](
+                                      std::optional<FileManager<B>>& fileManager,
+                                      std::shared_mutex& segmentMutex) {
         if (!fileManager) {
             // the fileManager has not been initialized -> wait until it has
             std::shared_lock segmentLock(segmentMutex);
@@ -242,8 +251,9 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
     auto& segment = *segments.at(segmentIndex);
     // unlock the segment manager
     mainLock.unlock();
-    segment.accessFileManager([&mainLock, data = std::move(data), blockID](
-                                      std::optional<FileManager<B>>& fileManager, std::shared_mutex& segmentMutex) {
+    segment.accessFileManager([data = std::move(data), blockID](
+                                      std::optional<FileManager<B>>& fileManager,
+                                      std::shared_mutex& segmentMutex) {
         if (!fileManager) {
             // the fileManager has not been initialized -> wait until it has
             std::shared_lock segmentLock(segmentMutex);
@@ -256,7 +266,8 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
 template<std::size_t B>
 void SegmentManager<B>::flush() {
     for (auto& segment: segments) {
-        segment->accessFileManager([](std::optional<FileManager<B>>& fileManager, std::shared_mutex&) {
+        segment->accessFileManager([](std::optional<FileManager<B>>& fileManager,
+                                      std::shared_mutex&) {
             assert(fileManager);
             fileManager->flush();
         });

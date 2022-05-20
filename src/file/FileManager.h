@@ -52,7 +52,7 @@ private:
     void storeIDInBlock(std::uint64_t, std::uint64_t);
 
 public:
-    constexpr size_t getBlockSize() const;
+    constexpr std::size_t getBlockSize() const;
     std::uint64_t freeBlocks() const;
     std::uint64_t allocatedBlocks() const;
 
@@ -71,7 +71,7 @@ public:
 template<std::uint64_t B>
 FileManager<B>::FileManager(const std::string& filePath, std::size_t allocatedBlocks) {
     if (std::filesystem::exists(filePath) && std::filesystem::is_regular_file(filePath)) {
-        fd = open(filePath.c_str(), O_RDWR);// TODO: check O_DIRECT (errno 9)
+        fd = open(filePath.c_str(), O_RDWR);
         if (pread(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
             throw std::runtime_error("Invalid file!");
         }
@@ -82,7 +82,6 @@ FileManager<B>::FileManager(const std::string& filePath, std::size_t allocatedBl
         if (allocatedBlocks == 0) {
             throw std::runtime_error("<allocatedBlocks> cannot be 0 if the file does not exist yet.");
         }
-        // TODO: check O_DIRECT (errno 22)
         fd = open(filePath.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         if (fd < 0) {
             throw std::runtime_error("Could not create file!");
@@ -114,7 +113,7 @@ void FileManager<B>::storeIDInBlock(std::uint64_t id, std::uint64_t idToStore) {
 }
 // --------------------------------------------------------------------------
 template<std::uint64_t B>
-constexpr size_t FileManager<B>::getBlockSize() const {
+constexpr std::size_t FileManager<B>::getBlockSize() const {
     return B;
 }
 // --------------------------------------------------------------------------

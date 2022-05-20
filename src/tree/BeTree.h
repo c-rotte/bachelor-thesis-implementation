@@ -178,12 +178,12 @@ private:
 
     // splits a leaf node by creating a new page and returning it as well
     // as a copy of the middle key (pivot)
-    // note the returned page is still exclusively locked
+    // note: the returned page is still exclusively locked
     PageT& splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT&, K&);
     FRIEND_TEST(BeTreeMethods, splitLeafNode);
     // splits a leaf node by creating a new page and returning it as well
     // as the removed middle key (pivot)
-    // note the returned page is still exclusively locked
+    // note: the returned page is still exclusively locked
     PageT& splitInnerNode(typename BeNodeWrapperT::BeInnerNodeT&, K&);
     FRIEND_TEST(BeTreeMethods, splitInnerNode);
     // inserts pivot elements

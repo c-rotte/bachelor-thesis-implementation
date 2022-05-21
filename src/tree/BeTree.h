@@ -25,6 +25,8 @@
 // --------------------------------------------------------------------------
 namespace {
 // --------------------------------------------------------------------------
+constexpr bool ENABLE_INNER_SQUASHING = true;
+// --------------------------------------------------------------------------
 template<class Iterator>
 requires std::bidirectional_iterator<Iterator>
 std::size_t squashUpserts(Iterator begin, Iterator end)
@@ -387,7 +389,9 @@ BeTree<K, V, B, N, EPSILON>::removeMessages(
                additionalUpserts.end(),
                std::back_inserter(allMessages));
     // squash the messages
-    allMessages.resize(squashUpserts(allMessages.begin(), allMessages.end()));
+    if (ENABLE_INNER_SQUASHING) {
+        allMessages.resize(squashUpserts(allMessages.begin(), allMessages.end()));
+    }
     // now scan all messages for blocks
     // first index, last index (exclusive), child index
     using BlockTuple = std::tuple<std::size_t, std::size_t, std::size_t>;
@@ -424,13 +428,13 @@ BeTree<K, V, B, N, EPSILON>::removeMessages(
     std::iota(blockReferences.begin(), blockReferences.end(), 0);
     // sort the references according to their size (starting with the largest)
     // first index, last index (exclusive), child index
-    std::sort(blockReferences.begin(), blockReferences.end(),
+    std::sort(blockReferences.rbegin(), blockReferences.rend(),
               [&messageBlocks](const std::size_t& indexA, const std::size_t& indexB) {
-                  const BlockTuple& a = messageBlocks[indexA];
-                  const BlockTuple& b = messageBlocks[indexB];
+                  const BlockTuple& a = messageBlocks.at(indexA);
+                  const BlockTuple& b = messageBlocks.at(indexB);
                   const std::size_t sizeA = std::get<1>(a) - std::get<0>(a);
                   const std::size_t sizeB = std::get<1>(b) - std::get<0>(b);
-                  return sizeA >= sizeB;
+                  return sizeA < sizeB;
               });
     // now loop through the tuples until we have enough slots
     MessageMap result;
@@ -502,12 +506,18 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
     for (auto& [childIndex, vector]: messageMap) {
         assert(childIndex <= currentNode.size);
         assert(std::is_sorted(vector.begin(), vector.end()));
-        // squash the message vector
-        vector.resize(squashUpserts(vector.begin(), vector.end()));
+        if (ENABLE_INNER_SQUASHING) {
+            // squash the message vector
+            vector.resize(squashUpserts(vector.begin(), vector.end()));
+        }
         // pin the child
         PageT& childPage = pageBuffer.pinPage(
                 currentNode.children[childIndex], true);
         if (accessNode(childPage).isLeaf()) {
+            if (!ENABLE_INNER_SQUASHING) {
+                // the vector was not squashed
+                vector.resize(squashUpserts(vector.begin(), vector.end()));
+            }
             // base case: we arrived at the leaf level
             auto& leafChild = accessNode(childPage).asLeaf();
             // count the future node size
@@ -542,7 +552,8 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
         } else {
             // the children are inner nodes
             auto& innerChild = accessNode(childPage).asInner();
-            if (innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
+            if (ENABLE_INNER_SQUASHING &&
+                innerChild.upserts.upserts.size() - innerChild.upserts.size >= vector.size()) {
                 // squash the child
                 innerChild.upserts.size = squashUpserts(innerChild.upserts.upserts.begin(),
                                                         innerChild.upserts.upserts.begin() +
@@ -751,7 +762,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootInnerUpsert(Upsert<K, V> upsert, Pag
     // must be an inner node
     assert(!accessNode(*rootPage).isLeaf());
     auto& innerNode = accessNode(*rootPage).asInner();
-    if (innerNode.upserts.size < innerNode.upserts.upserts.size()) {
+    if (ENABLE_INNER_SQUASHING && innerNode.upserts.size < innerNode.upserts.upserts.size()) {
         // squash the buffer
         innerNode.upserts.size = squashUpserts(innerNode.upserts.upserts.begin(),
                                                innerNode.upserts.upserts.begin() +

@@ -202,7 +202,7 @@ TEST(BeTree, SingleThreadedUpdateBigRandom) {
 // --------------------------------------------------------------------------
 TEST(BeTree, SingleThreadedUpdateLargeRandom) {
     setup();
-    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t BLOCK_SIZE = 1024;
     constexpr size_t PAGE_AMOUNT = 100;
     BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
     vector<uint64_t> inserts(50000);
@@ -444,7 +444,7 @@ TEST(BeTree, MultiThreadedDuplicatesBigRandom) {
 // --------------------------------------------------------------------------
 TEST(BeTree, MultiThreadedDuplicatesLargeRandom) {
     setup();
-    constexpr size_t BLOCK_SIZE = 256;
+    constexpr size_t BLOCK_SIZE = 512;
     constexpr size_t PAGE_AMOUNT = 100;
     BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50> tree(DIRNAME, 1.25);
     vector<uint64_t> inserts(50000);

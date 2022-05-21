@@ -835,8 +835,12 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
     if (upsert.type == UpsertType::INSERT) {
         if (keyIndex < leafNode.size && * keyIt == upsert.key) {
             // the key does already exist -> overwrite
-            leafNode.values[keyIndex] = std::move(upsert.value);
-            pageBuffer.unpinPage(rootPage->id, true);
+            if (leafNode.values[keyIndex] != upsert.value) {
+                leafNode.values[keyIndex] = std::move(upsert.value);
+                pageBuffer.unpinPage(rootPage->id, true);
+            } else {
+                pageBuffer.unpinPage(rootPage->id, false);
+            }
             return;
         }
         auto* targetPage = rootPage;// page which will receive the insert

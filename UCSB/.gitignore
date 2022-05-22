@@ -1,6 +1,4 @@
-./build_release
-./cmake
-./LevelDB
-./rocksdb*
-./tmp
-./bench/results
+build_release/
+cmake/
+tmp/
+bench/results/

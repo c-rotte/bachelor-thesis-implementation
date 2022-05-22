@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 // --------------------------------------------------------------------------
-#include "external/ThreadPool.h"
-#include "src/tree/BeTree.h"
+#include "src/betree/BeTree.h"
+#include "thirdparty/ThreadPool/ThreadPool.h"
 #include <filesystem>
 #include <new>
 #include <random>
@@ -9,7 +9,7 @@
 #include <unordered_set>
 // --------------------------------------------------------------------------
 using namespace std;
-using namespace tree;
+using namespace betree;
 // --------------------------------------------------------------------------
 namespace {
 // --------------------------------------------------------------------------
@@ -20,7 +20,7 @@ void setup() {
 // --------------------------------------------------------------------------
 }// namespace
 // --------------------------------------------------------------------------
-namespace tree {
+namespace betree {
 // --------------------------------------------------------------------------
 TEST(BeTreeMethods, splitLeafNode) {
     setup();
@@ -231,5 +231,5 @@ TEST(BeTreeMethods, removeMessages) {
     }
 }
 // --------------------------------------------------------------------------
-}// namespace tree
+}// namespace betree
  // --------------------------------------------------------------------------

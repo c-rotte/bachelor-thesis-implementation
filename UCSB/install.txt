@@ -1,0 +1,12 @@
+paru conan
+
+paru rocksdb
+paru leveldb
+paru wiredtiger
+paru lmdb
+
+./setup.sh
+./build_release.sh
+
+sudo pip3 install pexpect
+sudo python3 run.py

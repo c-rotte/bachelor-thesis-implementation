@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 // --------------------------------------------------------------------------
-#include "external/ThreadPool.h"
 #include "src/buffer/PageBuffer.h"
+#include "thirdparty/ThreadPool/ThreadPool.h"
 #include "utils/SimpleBinaryTree.h"
 #include <filesystem>
 #include <new>
@@ -319,7 +319,7 @@ TEST(PageBuffer, BinaryTreeSingleThreaded) {
         vector<future<void>> calls;
         vector<int> ints(10000);
         iota(ints.begin(), ints.end(), -5000);// fill with -5000..4999
-        // shuffle the values to balance the tree
+        // shuffle the values to balance the betree
         shuffle(ints.begin(), ints.end(), default_random_engine());
         for (int i: ints) {
             if (i == 0) {
@@ -366,7 +366,7 @@ TEST(PageBuffer, BinaryTreeMultiThreaded) {
         vector<future<void>> calls;
         vector<int> ints(10000);
         iota(ints.begin(), ints.end(), -5000);// fill with -5000..4999
-        // shuffle the values to balance the tree
+        // shuffle the values to balance the betree
         shuffle(ints.begin(), ints.end(), default_random_engine());
         for (int i: ints) {
             if (i == 0) {

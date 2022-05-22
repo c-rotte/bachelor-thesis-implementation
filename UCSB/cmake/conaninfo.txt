@@ -1,0 +1,63 @@
+[settings]
+    arch=x86_64
+    build_type=Release
+    compiler=gcc
+    compiler.libcxx=libstdc++11
+    compiler.version=11
+    os=Linux
+
+[requires]
+    benchmark/1.Y.Z
+    fmt/8.Y.Z
+    leveldb/1.Y.Z
+    lmdb/0.9.29
+    nlohmann_json/3.Y.Z
+    snappy/1.Y.Z
+
+[options]
+
+
+[full_settings]
+    arch=x86_64
+    build_type=Release
+    compiler=gcc
+    compiler.libcxx=libstdc++11
+    compiler.version=11
+    os=Linux
+
+[full_requires]
+    benchmark/1.6.0:1fa499dcb6ccf57733ed1f578fb1e1bd4cf858b1
+    crc32c/1.1.2:6557f18ca99c0b6a233f43db00e30efaa525e27e
+    fmt/8.0.1:2c09c8f84c016041549fcee94e4caae5d89424b6
+    leveldb/1.23:c520310e11cdd3a91c97b3b85775a9235e9918ad
+    lmdb/0.9.29:d2a650a4e4d9d78e47b2c3b961fbd52439cb7681
+    nlohmann_json/3.10.4:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9
+    snappy/1.1.9:6557f18ca99c0b6a233f43db00e30efaa525e27e
+
+[full_options]
+    benchmark:enable_exceptions=True
+    benchmark:enable_lto=False
+    benchmark:fPIC=True
+    benchmark:shared=False
+    crc32c:fPIC=True
+    crc32c:shared=False
+    fmt:fPIC=True
+    fmt:header_only=False
+    fmt:shared=False
+    fmt:with_fmt_alias=False
+    fmt:with_os_api=True
+    leveldb:fPIC=True
+    leveldb:shared=False
+    leveldb:with_crc32c=True
+    leveldb:with_snappy=True
+    lmdb:enable_robust_mutex=True
+    lmdb:fPIC=True
+    lmdb:shared=False
+    snappy:fPIC=True
+    snappy:shared=False
+
+[recipe_hash]
+
+
+[env]
+

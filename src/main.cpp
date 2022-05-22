@@ -1,4 +1,4 @@
-#include "tree/BeTree.h"
+#include "betree/BeTree.h"
 #include <filesystem>
 #include <iostream>
 // --------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 // --------------------------------------------------------------------------
-#include "external/ThreadPool.h"
 #include "src/file/SegmentManager.h"
+#include "thirdparty/ThreadPool/ThreadPool.h"
 #include <filesystem>
 #include <unordered_set>
 // --------------------------------------------------------------------------

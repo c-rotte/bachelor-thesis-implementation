@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 // --------------------------------------------------------------------------
-#include "external/ThreadPool.h"
 #include "src/file/FileManager.h"
+#include "thirdparty/ThreadPool/ThreadPool.h"
 #include <filesystem>
 #include <unordered_set>
 // --------------------------------------------------------------------------
@@ -113,7 +113,7 @@ TEST(FileManager, WriteMultiThreaded) {
             }
         }));
     }
-    for(auto& call : calls){
+    for (auto& call: calls) {
         call.get();
     }
     for (int i = 0; i < 10000; i++) {

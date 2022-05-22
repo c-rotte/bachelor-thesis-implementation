@@ -1,0 +1,90 @@
+{
+ "options": [
+  [
+   "benchmark:enable_exceptions",
+   "True"
+  ],
+  [
+   "benchmark:enable_lto",
+   "False"
+  ],
+  [
+   "benchmark:fPIC",
+   "True"
+  ],
+  [
+   "benchmark:shared",
+   "False"
+  ],
+  [
+   "crc32c:fPIC",
+   "True"
+  ],
+  [
+   "crc32c:shared",
+   "False"
+  ],
+  [
+   "fmt:fPIC",
+   "True"
+  ],
+  [
+   "fmt:header_only",
+   "False"
+  ],
+  [
+   "fmt:shared",
+   "False"
+  ],
+  [
+   "fmt:with_fmt_alias",
+   "False"
+  ],
+  [
+   "fmt:with_os_api",
+   "True"
+  ],
+  [
+   "leveldb:fPIC",
+   "True"
+  ],
+  [
+   "leveldb:shared",
+   "False"
+  ],
+  [
+   "leveldb:with_crc32c",
+   "True"
+  ],
+  [
+   "leveldb:with_snappy",
+   "True"
+  ],
+  [
+   "lmdb:enable_robust_mutex",
+   "True"
+  ],
+  [
+   "lmdb:fPIC",
+   "True"
+  ],
+  [
+   "lmdb:shared",
+   "False"
+  ],
+  [
+   "snappy:fPIC",
+   "True"
+  ],
+  [
+   "snappy:shared",
+   "False"
+  ]
+ ],
+ "root": {
+  "name": "UCSB",
+  "version": "0.0.1",
+  "user": null,
+  "channel": null
+ }
+}

@@ -5,6 +5,11 @@ paru leveldb
 paru wiredtiger
 paru lmdb
 
+# remove google benchmark from the conan file and build it manually:
+# https://github.com/google/benchmark/blob/main/docs/perf_counters.md
+# 1) build and install https://github.com/wcohen/libpfm4
+# 2) build and install benchmark with pfm: https://github.com/google/benchmark/blob/main/docs/perf_counters.md
+
 ./setup.sh
 ./build_release.sh
 

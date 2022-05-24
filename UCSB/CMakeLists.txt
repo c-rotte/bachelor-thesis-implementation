@@ -138,6 +138,9 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# find google benchmark (manual build)
+find_package(benchmark REQUIRED)
+
 #######################################################################################################################
 # Build tests benchmarks
 #######################################################################################################################
@@ -147,6 +150,7 @@ target_link_libraries(ucsb_bench${ARTIFACT_SUFFIX}
   ${CXX_TARGET_LINK_LIBRARIES}
   ${PKG_PACKAGES_LIBRARIES}
   ${CONAN_LIBS}
+  benchmark::benchmark
   ${CMAKE_DL_LIBS}
   ${CXX_TARGET_LINK_LIBRARIES_WITH_FLAGS}
 )

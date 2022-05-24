@@ -205,8 +205,8 @@ inline void register_benchmark(std::string const& name, size_t threads_count, fu
 void run_benchmarks(int argc, char* argv[], settings_t const& settings) {
     (void)argc;
 
-    int bm_argc = 4;
-    char* bm_argv[4];
+    int bm_argc = 6;
+    char* bm_argv[6];
     std::string arg0(argv[0]);
     bm_argv[0] = const_cast<char*>(arg0.c_str());
 
@@ -218,6 +218,12 @@ void run_benchmarks(int argc, char* argv[], settings_t const& settings) {
 
     std::string arg3("--benchmark_out_format=json");
     bm_argv[3] = const_cast<char*>(arg3.c_str());
+
+    std::string arg4("--benchmark_perf_counters=CYCLES,INSTRUCTIONS,CACHE-MISSES");
+    bm_argv[4] = const_cast<char*>(arg4.c_str());
+
+    std::string arg5("--benchmark_counters_tabular=true");
+    bm_argv[5] = const_cast<char*>(arg5.c_str());
 
     bm::Initialize(&bm_argc, bm_argv);
     if (bm::ReportUnrecognizedArguments(bm_argc, bm_argv)) {

@@ -124,14 +124,13 @@ std::size_t squashUpserts(Iterator begin, Iterator end)
     auto lastBegin = begin;
     for (auto it = begin; it != end; ++it) {
         Iterator currentBegin, currentEnd;
-        if (lastBegin->key != it->key) {
-            currentBegin = lastBegin;
-            currentEnd = it;
-            // set lastBegin
-            lastBegin = it;
-        } else {
+        if (lastBegin->key == it->key) {
             continue;
         }
+        currentBegin = lastBegin;
+        currentEnd = it;
+        // set lastBegin
+        lastBegin = it;
         assert(currentBegin->key == (currentEnd - 1)->key);
         // found a block, accumulate the block
         *currentSlot = accumulate(currentBegin, currentEnd);
@@ -165,7 +164,7 @@ class BeTree {
 
     struct alignas(alignof(std::max_align_t)) Header {
         std::uint64_t rootID = 0;
-        std::atomic_uint32_t currentTimeStamp = 0;
+        std::atomic_uint64_t currentTimeStamp = 0;
     };
 
 private:

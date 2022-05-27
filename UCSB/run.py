@@ -14,7 +14,7 @@ run_docker_image = False
 
 threads = [
     1,
-    # 2,
+    2,
     # 4,
     # 8,
     # 16,
@@ -41,12 +41,12 @@ sizes = [
 workload_names = [
     'Init',
     'Read',
-    'BatchRead',
-    'RangeSelect',
-    'Scan',
+    #'BatchRead',
+    #'RangeSelect',
+    #'Scan',
     'ReadUpdate_50_50',
     'ReadInsert_95_5',
-    'BatchInsert',
+    #'BatchInsert',
     'Remove',
 ]
 

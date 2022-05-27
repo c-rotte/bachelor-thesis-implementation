@@ -23,7 +23,7 @@ template<class K, class V>
 struct Upsert {
     K key;
     V value;// don't wrap it into an optional to save space
-    std::uint32_t timeStamp = -1;
+    std::uint64_t timeStamp = -1;
     unsigned char type = UpsertType::INVALID;
 
     auto operator<=>(const Upsert&) const;

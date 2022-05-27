@@ -63,7 +63,7 @@ private:
     PageT& splitInnerNode(typename BNodeWrapperT::BInnerNodeT&, K&);
     FRIEND_TEST(BTreeMethods, splitInnerNode);
     // helper methods
-    void insertTraversal(K, V, PageT*);
+    void insertTraversal(K, V, PageT*, bool);
     void handleRootLeafInsert(K, V, PageT*);
     void handleRootInnerInsert(K, V, PageT*);
 
@@ -173,44 +173,44 @@ BTree<K, V, B, N>::splitInnerNode(typename BNodeWrapperT::BInnerNodeT& innerNode
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
-void BTree<K, V, B, N>::insertTraversal(K key, V value, PageT* parentPage) {
+void BTree<K, V, B, N>::insertTraversal(K key, V value, PageT* parentPage, bool dirtyParent) {
     // must not be a leaf
     assert(!accessNode(*parentPage).isLeaf());
     auto& parentNode = accessNode(*parentPage).asInner();
     assert(parentNode.size < parentNode.pivots.size());
-    // search for the key index
-    auto keyIt = std::lower_bound(parentNode.pivots.begin(),
-                                  parentNode.pivots.begin() + parentNode.size,
-                                  key);
-    std::size_t keyIndex = keyIt - parentNode.pivots.begin();
-    std::uint64_t childID = parentNode.children[keyIndex];
+    // search for the pivot index
+    auto pivotIt = std::lower_bound(parentNode.pivots.begin(),
+                                    parentNode.pivots.begin() + parentNode.size,
+                                    key);
+    std::size_t pivotIndex = pivotIt - parentNode.pivots.begin();
+    std::uint64_t childID = parentNode.children[pivotIndex];
     // pin the child
     PageT& childPage = pageBuffer.pinPage(childID, true);
     if (accessNode(childPage).isLeaf()) {
         auto* targetPage = &childPage;
+        auto& leafNode = accessNode(childPage).asLeaf();
+        // search for the key index
+        auto keyIt = std::lower_bound(leafNode.keys.begin(),
+                                      leafNode.keys.begin() + leafNode.size,
+                                      key);
+        std::size_t keyIndex = keyIt - leafNode.keys.begin();
+        bool split = false;
         {
-            auto& leafNode = accessNode(childPage).asLeaf();
-            if (keyIndex >= leafNode.size || leafNode.keys[keyIndex] != key) {
-                // the key already exists -> overwrite it
-                leafNode.values[keyIndex] = std::move(value);
-                // unpin the page
-                pageBuffer.unpinPage(targetPage->id, true);
-                return;
-            }
             // check if we need to split the leaf
             assert(leafNode.size <= leafNode.keys.size());
             if (leafNode.size == leafNode.keys.size()) {
                 K middleKey;
                 PageT& rightPage = splitLeafNode(leafNode, middleKey);
                 // insert the pivot
-                std::move_backward(parentNode.pivots.begin() + keyIndex,
+                std::move_backward(parentNode.pivots.begin() + pivotIndex,
                                    parentNode.pivots.begin() + parentNode.size,
                                    parentNode.pivots.begin() + parentNode.size + 1);
-                parentNode.pivots[keyIndex] = middleKey;
-                std::move_backward(parentNode.children.begin() + keyIndex + 1,
+                parentNode.pivots[pivotIndex] = middleKey;
+                std::move_backward(parentNode.children.begin() + pivotIndex + 1,
                                    parentNode.children.begin() + parentNode.size + 1,
                                    parentNode.children.begin() + parentNode.size + 2);
-                parentNode.children[keyIndex + 1] = rightPage.id;
+                parentNode.children[pivotIndex + 1] = rightPage.id;
+                parentNode.size++;
                 // unpin the parent
                 pageBuffer.unpinPage(parentPage->id, true);
                 // check which child will receive the insert
@@ -224,22 +224,34 @@ void BTree<K, V, B, N>::insertTraversal(K key, V value, PageT* parentPage) {
                     pageBuffer.unpinPage(childPage.id, true);
                     targetPage = &rightPage;
                 }
+                split = true;
             } else {
                 // unpin the parent
-                pageBuffer.unpinPage(parentPage->id, false);
+                pageBuffer.unpinPage(parentPage->id, dirtyParent);
             }
         }
         // perform the insert
         assert(targetPage != nullptr);
         assert(accessNode(*targetPage).isLeaf());
         auto& targetLeafNode = accessNode(*targetPage).asLeaf();
+        if (keyIndex < targetLeafNode.size && * keyIt == key) {
+            // the key already exists -> overwrite it
+            if (targetLeafNode.values[keyIndex] == value) {
+                pageBuffer.unpinPage(targetPage->id, split);
+                return;
+            }
+            targetLeafNode.values[keyIndex] = std::move(value);
+            // unpin the page
+            pageBuffer.unpinPage(targetPage->id, true);
+            return;
+        }
         // make room for the key (shift [index; end) one to the right)
-        std::move(targetLeafNode.keys.begin() + keyIndex,
-                  targetLeafNode.keys.begin() + targetLeafNode.size,
-                  targetLeafNode.keys.begin() + keyIndex + 1);
-        std::move(targetLeafNode.values.begin() + keyIndex,
-                  targetLeafNode.values.begin() + targetLeafNode.size,
-                  targetLeafNode.values.begin() + keyIndex + 1);
+        std::move_backward(targetLeafNode.keys.begin() + keyIndex,
+                           targetLeafNode.keys.begin() + targetLeafNode.size,
+                           targetLeafNode.keys.begin() + targetLeafNode.size + 1);
+        std::move_backward(targetLeafNode.values.begin() + keyIndex,
+                           targetLeafNode.values.begin() + targetLeafNode.size,
+                           targetLeafNode.values.begin() + targetLeafNode.size + 1);
         // insert the pair
         targetLeafNode.keys[keyIndex] = key;
         targetLeafNode.values[keyIndex] = std::move(value);
@@ -248,6 +260,43 @@ void BTree<K, V, B, N>::insertTraversal(K key, V value, PageT* parentPage) {
         // unpin the page
         pageBuffer.unpinPage(targetPage->id, true);
     } else {
+        auto* targetPage = &childPage;
+        bool split = false;
+        {
+            auto& innerNode = accessNode(childPage).asInner();
+            assert(innerNode.size <= innerNode.pivots.size());
+            // check if we need to split
+            if (innerNode.size == innerNode.pivots.size()) {
+                K middleKey;
+                PageT& rightPage = splitInnerNode(innerNode, middleKey);
+                // insert the pivot
+                std::move_backward(parentNode.pivots.begin() + pivotIndex,
+                                   parentNode.pivots.begin() + parentNode.size,
+                                   parentNode.pivots.begin() + parentNode.size + 1);
+                parentNode.pivots[pivotIndex] = middleKey;
+                std::move_backward(parentNode.children.begin() + pivotIndex + 1,
+                                   parentNode.children.begin() + parentNode.size + 1,
+                                   parentNode.children.begin() + parentNode.size + 2);
+                parentNode.children[pivotIndex + 1] = rightPage.id;
+                parentNode.size++;
+                // unpin the parent
+                pageBuffer.unpinPage(parentPage->id, true);
+                // check which page receives the insert
+                if (key <= middleKey) {
+                    pageBuffer.unpinPage(rightPage.id, true);
+                    targetPage = &childPage;
+                } else {
+                    pageBuffer.unpinPage(childPage.id, true);
+                    targetPage = &rightPage;
+                }
+                split = true;
+            } else {
+                // parent was not modified -> unpin (not dirty)
+                pageBuffer.unpinPage(parentPage->id, dirtyParent);
+            }
+        }
+        // recursive call
+        insertTraversal(key, std::move(value), targetPage, split);
     }
 }
 // --------------------------------------------------------------------------
@@ -267,6 +316,7 @@ void BTree<K, V, B, N>::handleRootInnerInsert(K key, V value, PageT* rootPage) {
     // we need to check for a split
     auto* targetPage = rootPage;// page which will receive the insert
     assert(innerNode.size <= innerNode.pivots.size());
+    bool dirtyParent = false;
     if (innerNode.size == innerNode.pivots.size()) {
         // full root -> split it preemptively
         K middleKey;
@@ -293,13 +343,14 @@ void BTree<K, V, B, N>::handleRootInnerInsert(K key, V value, PageT* rootPage) {
             targetPage = &newRoot;
         } else {
             // adjust the key index
-            auto& newRootNode = accessNode(newRoot).asLeaf();
+            auto& newRootNode = accessNode(newRoot).asInner();
             keyIndex -= newRootNode.size;
             pageBuffer.unpinPage(newRoot.id, true);
             targetPage = &rightPage;
         }
+        dirtyParent = true;
     }
-    insertTraversal(key, std::move(value), targetPage);
+    insertTraversal(key, std::move(value), targetPage, dirtyParent);
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
@@ -401,32 +452,159 @@ void BTree<K, V, B, N>::insert(K key, V value) {
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
 void BTree<K, V, B, N>::update(K key, V value) {
+    PageT* currentPage = &pageBuffer.pinPage(header.rootID, false);
+    // after a few inserts, the root will be an inner node
+    if (accessNode(*currentPage).isLeaf()) {
+        // repin uniquely
+        pageBuffer.unpinPage(header.rootID, false);
+        currentPage = &pageBuffer.pinPage(header.rootID, true);
+    }
+    while (!accessNode(*currentPage).isLeaf()) {
+        auto& currentNode = accessNode(*currentPage).asInner();
+        // search for the key index
+        auto keyIt = std::lower_bound(currentNode.pivots.begin(),
+                                      currentNode.pivots.begin() + currentNode.size,
+                                      key);
+        std::size_t keyIndex = keyIt - currentNode.pivots.begin();
+        std::uint64_t childID = currentNode.children[keyIndex];
+        // pin the child
+        PageT* childPage = &pageBuffer.pinPage(childID, false);
+        if (accessNode(*childPage).isLeaf()) {
+            // repin uniquely
+            pageBuffer.unpinPage(childID, false);
+            childPage = &pageBuffer.pinPage(childID, true);
+        }
+        // unpin the parent
+        pageBuffer.unpinPage(currentPage->id, false);
+        // set the current page to the child
+        currentPage = childPage;
+    }
+    // currentPage is now a uniquely pinned leaf node
+    auto& leafNode = accessNode(*currentPage).asLeaf();
+    // search for the key index
+    auto keyIt = std::lower_bound(leafNode.keys.begin(),
+                                  leafNode.keys.begin() + leafNode.size,
+                                  key);
+    std::size_t keyIndex = keyIt - leafNode.keys.begin();
+    bool found = false;
+    if (keyIndex < leafNode.size && * keyIt == key) {
+        // the tree contains the key -> update its value
+        leafNode.values[keyIndex] += std::move(value);
+        found = true;
+    }
+    pageBuffer.unpinPage(currentPage->id, found);
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
 void BTree<K, V, B, N>::erase(const K& key) {
+    PageT* currentPage = &pageBuffer.pinPage(header.rootID, false);
+    // after a few inserts, the root will be an inner node
+    if (accessNode(*currentPage).isLeaf()) {
+        // repin uniquely
+        pageBuffer.unpinPage(header.rootID, false);
+        currentPage = &pageBuffer.pinPage(header.rootID, true);
+    }
+    while (!accessNode(*currentPage).isLeaf()) {
+        auto& currentNode = accessNode(*currentPage).asInner();
+        // search for the key index
+        auto keyIt = std::lower_bound(currentNode.pivots.begin(),
+                                      currentNode.pivots.begin() + currentNode.size,
+                                      key);
+        std::size_t keyIndex = keyIt - currentNode.pivots.begin();
+        std::uint64_t childID = currentNode.children[keyIndex];
+        // pin the child
+        PageT* childPage = &pageBuffer.pinPage(childID, false);
+        if (accessNode(*childPage).isLeaf()) {
+            // repin uniquely
+            pageBuffer.unpinPage(childID, false);
+            childPage = &pageBuffer.pinPage(childID, true);
+        }
+        // unpin the parent
+        pageBuffer.unpinPage(currentPage->id, false);
+        // set the current page to the child
+        currentPage = childPage;
+    }
+    // currentPage is now a uniquely pinned leaf node
+    auto& leafNode = accessNode(*currentPage).asLeaf();
+    // search for the key index
+    auto keyIt = std::lower_bound(leafNode.keys.begin(),
+                                  leafNode.keys.begin() + leafNode.size,
+                                  key);
+    std::size_t keyIndex = keyIt - leafNode.keys.begin();
+    bool found = false;
+    if (keyIndex < leafNode.size && * keyIt == key) {
+        assert(leafNode.size >= 1);
+        // the tree contains the key -> erase it
+        std::move(leafNode.keys.begin() + keyIndex + 1,
+                  leafNode.keys.begin() + leafNode.size,
+                  leafNode.keys.begin() + keyIndex);
+        std::move(leafNode.values.begin() + keyIndex + 1,
+                  leafNode.values.begin() + leafNode.size,
+                  leafNode.values.begin() + keyIndex);
+        // adjust the size
+        leafNode.size--;
+        found = true;
+    }
+    pageBuffer.unpinPage(currentPage->id, found);
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
 std::optional<V> BTree<K, V, B, N>::find(const K& key) {
+    PageT* currentPage = &pageBuffer.pinPage(header.rootID, false);
+    while (!accessNode(*currentPage).isLeaf()) {
+        auto& currentNode = accessNode(*currentPage).asInner();
+        // search for the key index
+        auto keyIt = std::lower_bound(currentNode.pivots.begin(),
+                                      currentNode.pivots.begin() + currentNode.size,
+                                      key);
+        std::size_t keyIndex = keyIt - currentNode.pivots.begin();
+        std::uint64_t childID = currentNode.children[keyIndex];
+        // pin the child
+        PageT* childPage = &pageBuffer.pinPage(childID, false);
+        // unpin the parent
+        pageBuffer.unpinPage(currentPage->id, false);
+        // set the current page to the child
+        currentPage = childPage;
+    }
+    // currentPage is now a pinned leaf node (shared)
+    auto& leafNode = accessNode(*currentPage).asLeaf();
+    // search for the key index
+    auto keyIt = std::lower_bound(leafNode.keys.begin(),
+                                  leafNode.keys.begin() + leafNode.size,
+                                  key);
+    std::size_t keyIndex = keyIt - leafNode.keys.begin();
+    std::optional<V> result;
+    if (keyIndex < leafNode.size && * keyIt == key) {
+        // the tree contains the key -> return its value
+        result = leafNode.values[keyIndex];
+    }
+    pageBuffer.unpinPage(currentPage->id, false);
+    return result;
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
 void BTree<K, V, B, N>::flush() {
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-        throw std::runtime_error("Could not save the header (betree).");
+        throw std::runtime_error("Could not save the header (btree).");
     }
     pageBuffer.flush();
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>
 std::ostream& operator<<(std::ostream& out, BTree<K, V, B, N>& tree) {
+    std::unordered_set<std::uint64_t> visitedIDs;
     // level order traversal
     std::queue<std::uint64_t> queue;
     queue.push(tree.header.rootID);
     std::cout << "digraph{\n";
     while (!queue.empty()) {
         std::uint64_t currentID = queue.front();
+
+        if (visitedIDs.contains(currentID)) {
+            exit(-1);
+        }
+        visitedIDs.insert(currentID);
+
         queue.pop();
         auto& page = tree.pageBuffer.pinPage(currentID, false);
         std::cout << page.id << "[label=\"";

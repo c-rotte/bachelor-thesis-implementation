@@ -6,7 +6,8 @@ set(TEST_SOURCES
         TestPageBuffer.cpp
         utils/SimpleBinaryTree.cpp
         TestBeTreeMethods.cpp
-        TestBeTree.cpp)
+        TestBeTree.cpp
+        TestBTree.cpp)
 
 add_clang_tidy_target(lint_tester_core ${TEST_SOURCES})
 add_dependencies(lint lint_tester_core)

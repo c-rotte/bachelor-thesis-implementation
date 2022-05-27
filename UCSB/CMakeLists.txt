@@ -21,6 +21,9 @@ project(UCSB)
 include_directories(${PROJECT_SOURCE_DIR} )
 link_directories("/usr/local/lib/")
 
+include_directories(${PROJECT_SOURCE_DIR}/..)
+message(${PROJECT_SOURCE_DIR}/..)
+
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
 set(CMAKE_CACHEFILE_DIR "${CMAKE_SOURCE_DIR}/build")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/lib")

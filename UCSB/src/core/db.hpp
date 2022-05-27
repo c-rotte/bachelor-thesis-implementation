@@ -2,8 +2,16 @@
 #include <memory>
 #include <set>
 
-#include "src/core/types.hpp"
 #include "src/core/data_accessor.hpp"
+#include "src/core/types.hpp"
+
+template<std::size_t N>
+inline std::array<unsigned char, N> operator+(
+        const std::array<unsigned char, N>& first,
+        const std::array<unsigned char, N>& second) {
+    // just overwrite it
+    return second;
+}
 
 namespace ucsb {
 
@@ -54,4 +62,4 @@ struct db_t : public data_accessor_t {
     virtual std::unique_ptr<transaction_t> create_transaction() = 0;
 };
 
-} // namespace ucsb
+}// namespace ucsb

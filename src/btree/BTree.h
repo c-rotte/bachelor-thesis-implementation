@@ -489,7 +489,7 @@ void BTree<K, V, B, N>::update(K key, V value) {
     bool found = false;
     if (keyIndex < leafNode.size && * keyIt == key) {
         // the tree contains the key -> update its value
-        leafNode.values[keyIndex] += std::move(value);
+        leafNode.values[keyIndex] = leafNode.values[keyIndex] + std::move(value);
         found = true;
     }
     pageBuffer.unpinPage(currentPage->id, found);

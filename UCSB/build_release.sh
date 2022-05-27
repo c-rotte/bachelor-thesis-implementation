@@ -4,6 +4,7 @@
 # Debug vs Release:
 # https://stackoverflow.com/a/7725055
 
+rm -rf ./build_release
 cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release -B ./build_release &&
     make -j4 -C ./build_release --silent &&
     # Congratulate the user!

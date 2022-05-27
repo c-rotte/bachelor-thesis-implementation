@@ -72,7 +72,7 @@ std::size_t squashUpserts(Iterator begin, Iterator end)
                             // IU -> I
                             auto result = upsertA;
                             result.timeStamp = upsertB.timeStamp;
-                            result.value += upsertB.value;
+                            result.value = result.value + upsertB.value;
                             return result;
                         }
                         if (upsertB.type == UpsertType::DELETE) {
@@ -661,7 +661,7 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                     continue;
                 }
                 // update the key
-                targetNode.values[keyIndex] += upsert.value;
+                targetNode.values[keyIndex] = targetNode.values[keyIndex] + upsert.value;
                 continue;
             }
             if (upsert.type == UpsertType::INSERT) {
@@ -832,7 +832,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
             return;
         }
         // update the key
-        leafNode.values[keyIndex] += std::move(upsert.value);
+        leafNode.values[keyIndex] = leafNode.values[keyIndex] + std::move(upsert.value);
         pageBuffer.unpinPage(rootPage->id, true);
         return;
     }
@@ -1015,7 +1015,7 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
     // inserted or deleted (deleted -> accumulatedUpdates is empty)
     for (auto& updateValue: accumulatedUpdates) {
         assert(currentValue);
-        (*currentValue) += std::move(updateValue);
+        *currentValue = *currentValue + std::move(updateValue);
     }
     return currentValue;
 }

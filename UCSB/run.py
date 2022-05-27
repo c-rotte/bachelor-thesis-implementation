@@ -27,10 +27,12 @@ db_names = [
     'leveldb',
     'wiredtiger',
     'lmdb',
+    'betree',
+    'btree'
 ]
 
 sizes = [
-    '100MB',
+    'CUSTOM',
     # '1GB',
     # '10GB',
     # '100GB',

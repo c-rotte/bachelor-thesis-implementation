@@ -12,9 +12,9 @@
 #include "src/betree/BeTree.h"
 
 #define BLOCK_SIZE 4096
-#define PAGE_AMOUNT 256
+#define PAGE_AMOUNT 122070
 #define EPSILON 50
-#define GROWTH_FACTOR 1.25
+#define GROWTH_FACTOR 1.5
 #define VALUE_SIZE_BYTES 100
 
 namespace betree {
@@ -128,9 +128,11 @@ operation_result_t betree_t::upsert(key_t key, value_spanc_t value) {
 
 operation_result_t betree_t::update(key_t key, value_spanc_t value) {
 
+    /*
     auto res = db_->find(key);
     if (!res)
         return {1, operation_status_t::not_found_k};
+    */
 
     db_->update(key, std::move(toArray(value)));
 

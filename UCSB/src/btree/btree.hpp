@@ -12,8 +12,8 @@
 #include "src/btree/BTree.h"
 
 #define BLOCK_SIZE 4096
-#define PAGE_AMOUNT 256
-#define GROWTH_FACTOR 1.25
+#define PAGE_AMOUNT 122070
+#define GROWTH_FACTOR 1.5
 #define VALUE_SIZE_BYTES 100
 
 namespace btree {
@@ -127,9 +127,13 @@ operation_result_t btree_t::upsert(key_t key, value_spanc_t value) {
 
 operation_result_t btree_t::update(key_t key, value_spanc_t value) {
 
+    /*
     auto res = db_->find(key);
     if (!res)
         return {1, operation_status_t::not_found_k};
+    */
+
+    db_->update(key, std::move(toArray(value)));
 
     return {1, operation_status_t::ok_k};
 }

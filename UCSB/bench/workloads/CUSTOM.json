@@ -1,25 +1,16 @@
 [
     {
-        "name": "Init",
-        "records_count": 1000000,
-        "operations_count": 10,
-        "value_length": 100,
-        "bulk_load_proportion": 1.0,
-        "bulk_load_min_length": 10000,
-        "bulk_load_max_length": 10000
-    },
-    {
         "name": "Read",
-        "records_count": 1000000,
-        "operations_count": 1000000,
+        "records_count": 10000000,
+        "operations_count": 10000000,
         "read_proportion": 1.0,
         "key_dist": "zipfian",
         "value_length": 100
     },
     {
         "name": "ReadUpdate_50_50",
-        "records_count": 1000000,
-        "operations_count": 1000000,
+        "records_count": 10000000,
+        "operations_count": 10000000,
         "read_proportion": 0.5,
         "update_proportion": 0.5,
         "key_dist": "zipfian",
@@ -27,8 +18,8 @@
     },
     {
         "name": "ReadUpsert_95_5",
-        "records_count": 1000000,
-        "operations_count": 1000000,
+        "records_count": 10000000,
+        "operations_count": 10000000,
         "read_proportion": 0.95,
         "upsert_proportion": 0.05,
         "key_dist": "latest",
@@ -36,9 +27,27 @@
     },
     {
         "name": "Remove",
-        "records_count": 1000000,
-        "operations_count": 150000,
+        "records_count": 10000000,
+        "operations_count": 1500000,
         "remove_proportion": 1.0,
-        "key_dist": "zipfian"
+        "key_dist": "zipfian",
+        "value_length": 100
+    },
+    {
+        "name": "ReadUpsert_50_50",
+        "records_count": 10000000,
+        "operations_count": 10000000,
+        "read_proportion": 0.5,
+        "upsert_proportion": 0.5,
+        "key_dist": "zipfian",
+        "value_length": 100
+    },
+    {
+        "name": "Upsert",
+        "records_count": 10000000,
+        "operations_count": 10000000,
+        "upsert_proportion": 1,
+        "key_dist": "zipfian",
+        "value_length": 100
     }
 ]

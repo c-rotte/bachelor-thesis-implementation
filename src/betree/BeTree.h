@@ -28,7 +28,7 @@ namespace betree {
 namespace {
 // --------------------------------------------------------------------------
 #define ENABLE_INNER_SQUASHING
-#define SQUASH_EXECUTION_POLICY (std::execution::unseq)
+#define SQUASH_EXECUTION_POLICY (std::execution::seq)
 // --------------------------------------------------------------------------
 template<class Iterator>
 requires std::bidirectional_iterator<Iterator>

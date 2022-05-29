@@ -9,25 +9,25 @@ import pathlib
 
 drop_caches = False
 transactional = False
-cleanup_previous = False
+cleanup_previous = True
 run_docker_image = False
 
 threads = [
     1,
     2,
-    # 4,
-    # 8,
+    4,
+    8,
     # 16,
     # 32,
     # 64,
 ]
 
 db_names = [
-    'rocksdb',
-    'leveldb',
-    'wiredtiger',
-    'lmdb',
-    'betree',
+    #'rocksdb',
+    #'leveldb',
+    #'wiredtiger',
+    #'lmdb',
+    # 'betree',
     'btree'
 ]
 
@@ -41,15 +41,17 @@ sizes = [
 ]
 
 workload_names = [
-    'Init',
+    # 'Init',
+    'Upsert',
     'Read',
     #'BatchRead',
     #'RangeSelect',
     #'Scan',
     'ReadUpdate_50_50',
-    'ReadInsert_95_5',
+    #'ReadIUpsert_95_5',
     #'BatchInsert',
     'Remove',
+    'ReadUpsert_50_50'
 ]
 
 

@@ -15,7 +15,7 @@ using namespace std;
 // --------------------------------------------------------------------------
 int main() {
     filesystem::remove("/tmp/12345");
-    int fd = fd = open("/tmp/12345", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    int fd = open("/tmp/12345", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     ftruncate(fd, 1);
     for (size_t i = 1; i <= 10000; i++) {
         thread thread1([fd, i]() {

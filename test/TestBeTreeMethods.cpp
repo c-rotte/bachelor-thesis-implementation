@@ -190,6 +190,31 @@ TEST(BeTreeMethods, insertPivots) {
     }
 }
 // --------------------------------------------------------------------------
+TEST(BeTreeMethods, mergeUpserts) {
+    vector<Upsert<uint64_t, uint64_t>> firstVec, secondVec, resVec;
+    size_t timeStamp = 0;
+    for (uint64_t i = 0; i <= 10; i++) {
+        Upsert<uint64_t, uint64_t> upsert;
+        upsert.key = i;
+        upsert.timeStamp = timeStamp++;
+        firstVec.push_back(upsert);
+    }
+    // key 10 overlaps
+    for (uint64_t i = 10; i < 20; i++) {
+        Upsert<uint64_t, uint64_t> upsert;
+        upsert.key = i;
+        upsert.timeStamp = timeStamp++;
+        secondVec.push_back(upsert);
+    }
+    mergeUpserts(firstVec.begin(), firstVec.end(),
+                 secondVec.begin(), secondVec.end(),
+                 back_inserter(resVec));
+    ASSERT_EQ(resVec.size(), 20);
+    for(size_t i = 0; i < 20; i++){
+        ASSERT_EQ(i, resVec[i].key);
+    }
+}
+// --------------------------------------------------------------------------
 // TODO: adjust for different sizeof(Upsert)
 /*
 TEST(BeTreeMethods, removeMessages) {

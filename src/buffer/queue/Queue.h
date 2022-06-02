@@ -53,9 +53,6 @@ const std::list<Entry<K, V>>& Queue<K, V>::getList() const {
 // --------------------------------------------------------------------------
 template<class K, class V>
 void Queue<K, V>::insert(K key, V value) {
-    if (contains(key)) {// TODO: remove check
-        throw std::runtime_error("Key was already in the queue!");
-    }
     // inserted values are at the front
     entryQueue.push_front(std::make_pair(key, std::move(value)));
     pointerMap[key] = entryQueue.begin();
@@ -63,9 +60,6 @@ void Queue<K, V>::insert(K key, V value) {
 // --------------------------------------------------------------------------
 template<class K, class V>
 Entry<K, V> Queue<K, V>::remove(const K& key) {
-    if (!contains(key)) {// TODO: remove check
-        throw std::runtime_error("Key was not in the queue!");
-    }
     auto it = pointerMap[key];
     Entry<K, V> removedEntry = std::move(*it);
     entryQueue.erase(it);

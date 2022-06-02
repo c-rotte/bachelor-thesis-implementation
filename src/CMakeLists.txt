@@ -7,7 +7,7 @@ set(B_EPSILON_SOURCES
         betree/BeTree.cpp
         betree/BeNode.cpp
         btree/BTree.cpp
-        btree/BNode.cpp ../UCSB/src/btree/btree.hpp)
+        btree/BNode.cpp ../UCSB/src/btree/btree.hpp file/Segment.cpp file/Segment.h)
 
 add_library(b_epsilon_core ${B_EPSILON_SOURCES})
 target_include_directories(b_epsilon_core PUBLIC ${CMAKE_SOURCE_DIR})

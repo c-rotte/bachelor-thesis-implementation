@@ -1110,7 +1110,7 @@ void BeTree<K, V, B, N, EPSILON>::upsert(Upsert<K, V> upsert) {
     // second case: the root node is a root node
     assert(!header.rootLeaf);
     assert(accessNode(*rootPage).nodeType() == NodeType::ROOT);
-    bool success = handleRootRootUpsert(std::move(upsert), rootPage, false);
+    bool success = handleRootRootUpsert(upsert, rootPage, false);
     if (!success) {
         // retry
         rootPage = &pageBuffer.pinPage(header.rootID, true);

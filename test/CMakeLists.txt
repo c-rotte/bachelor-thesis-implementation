@@ -14,5 +14,4 @@ add_dependencies(lint lint_tester_core)
 add_executable(tester ${TEST_SOURCES})
 target_link_libraries(tester PUBLIC
         b_epsilon_core
-        GTest::GTest
-        PRIVATE TBB::tbb)
+        GTest::GTest)

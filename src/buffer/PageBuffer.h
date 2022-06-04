@@ -13,6 +13,7 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_set>
+#include <iostream>
 // --------------------------------------------------------------------------
 namespace buffer {
 // --------------------------------------------------------------------------
@@ -124,6 +125,7 @@ void PageBuffer<B, N>::deletePage(std::uint64_t id) {
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLoad) {
+    //std::cout << "pinning " << id << std::endl;
     bool retry;
     do {
         retry = false;
@@ -337,6 +339,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
+    //std::cout << "unpinning " << id << std::endl;
     // lock the queue
     std::unique_lock queueLock(queueMutex);
     if (fifoQueue.contains(id)) {

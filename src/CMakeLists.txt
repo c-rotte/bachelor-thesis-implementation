@@ -1,5 +1,4 @@
 set(B_EPSILON_SOURCES
-        file/FileManager.cpp
         file/Segment.cpp
         file/SegmentManager.cpp
         buffer/PageBuffer.cpp
@@ -18,5 +17,4 @@ add_dependencies(lint lint_b_epsilon_core)
 
 add_executable(b_epsilon main.cpp)
 target_link_libraries(b_epsilon
-        PUBLIC b_epsilon_core
-        PRIVATE TBB::tbb)
+        PUBLIC b_epsilon_core)

@@ -140,6 +140,7 @@ class BeTree {
     struct alignas(alignof(std::max_align_t)) Header {
         std::uint64_t rootID = 0;
         std::atomic_uint64_t currentTimeStamp = 0;
+        bool rootLeaf = true;
     };
 
 private:
@@ -183,7 +184,8 @@ private:
     // helper functions for upsert
     void handleTraversalNode(PageT*, MessageMap,
                              std::deque<std::pair<PageT*, MessageMap>>&);
-    void handleRootRootUpsert(Upsert<K, V>, PageT*);
+    // this returns false if a split (and thus, another attempt) is required
+    bool handleRootRootUpsert(Upsert<K, V>, PageT*, bool);
     void handleRootLeafUpsert(Upsert<K, V>, PageT*);
     // inserts an upsert
     void upsert(Upsert<K, V>);
@@ -716,7 +718,9 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
-void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, PageT* rootPage) {
+bool BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert,
+                                                       PageT* rootPage,
+                                                       bool exclusiveMode) {
     // must be called with the root page
     assert(rootPage != nullptr);
     assert(rootPage->id == header.rootID);
@@ -729,6 +733,11 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
     std::size_t childIndex;
     bool splitRoot = false;
     if (rootNode.size == rootNode.pivots.size()) {
+        if (!exclusiveMode) {
+            // retry required
+            pageBuffer.unpinPage(rootPage->id, false);
+            return false;
+        }
         // split
         std::vector<K> midPivots;
         std::vector<PageT*> children = splitRootNode(rootNode, midPivots);
@@ -753,13 +762,22 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
         // pin the child
         targetPage = &pageBuffer.pinPage(rootNode.children[childIndex], true);
     }
-    // the target is a leaf
+    if (!exclusiveMode) {
+        // release the parent here already
+        pageBuffer.unpinPage(rootPage->id, false);
+    }
+    // 1) the target is a leaf
     if (accessNode(*targetPage).nodeType() == NodeType::LEAF) {
         auto& leafNode = accessNode(*targetPage).asLeaf();
         // check if we need to split
         assert(leafNode.size <= leafNode.keys.size());
         if (upsert.type == UpsertType::INSERT &&
             leafNode.size == leafNode.keys.size()) {
+            if (!exclusiveMode) {
+                // retry required (the parent was already freed)
+                pageBuffer.unpinPage(targetPage->id, false);
+                return false;
+            }
             // full leaf -> split it
             K middleKey;
             // <rightPage> is automatically uniquely pinned
@@ -785,7 +803,9 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
             }
         } else {
             // unpin the parent
-            pageBuffer.unpinPage(rootPage->id, true);
+            if (exclusiveMode) {
+                pageBuffer.unpinPage(rootPage->id, splitRoot);
+            }
         }
         auto& targetNode = accessNode(*targetPage).asLeaf();
         // search for the key index
@@ -798,7 +818,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
                 // the key does not exist -> continue
                 // unpin the leaf node
                 pageBuffer.unpinPage(targetPage->id, false);
-                return;
+                return true;
             }
             // delete the key (shift [index; end) one to the left)
             std::move(targetNode.keys.begin() + keyIndex + 1,
@@ -811,18 +831,18 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
             targetNode.size--;
             // unpin the leaf node
             pageBuffer.unpinPage(targetPage->id, true);
-            return;
+            return true;
         }
         if (upsert.type == UpsertType::UPDATE) {
             if (keyIndex >= targetNode.size || *keyIt != upsert.key) {
                 // the key does not exist -> continue
                 pageBuffer.unpinPage(targetPage->id, false);
-                return;
+                return true;
             }
             // update the key
             targetNode.values[keyIndex] = targetNode.values[keyIndex] + std::move(upsert.value);
             pageBuffer.unpinPage(targetPage->id, true);
-            return;
+            return true;
         }
         if (upsert.type == UpsertType::INSERT) {
             if (keyIndex < targetNode.size && * keyIt == upsert.key) {
@@ -833,7 +853,7 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
                 } else {
                     pageBuffer.unpinPage(targetPage->id, false);
                 }
-                return;
+                return true;
             }
             // from here on only use targetPage
             assert(targetPage != nullptr);
@@ -852,43 +872,35 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
             targetNode.size++;
             // unpin the page
             pageBuffer.unpinPage(targetPage->id, true);
-            return;
+            return true;
         }
-        return;
+        return true;
     }
+    // 2) the target is an inner node
     assert(accessNode(*targetPage).nodeType() == NodeType::INNER);
-    // the target is an inner node
     auto& innerNode = accessNode(*targetPage).asInner();
     auto upsertIt = std::lower_bound(innerNode.upserts.upserts.begin(),
                                      innerNode.upserts.upserts.begin() + innerNode.upserts.size,
-                                     upsert);
+                                     upsert.key);// upsert.key to ignore the timestamp
     const std::size_t upsertIndex = upsertIt - innerNode.upserts.upserts.begin();
     // check for an upsert on the current position
     if (upsertIndex < innerNode.upserts.size &&
         innerNode.upserts.upserts[upsertIndex].key == upsert.key) {
-        pageBuffer.unpinPage(rootPage->id, splitRoot);
+        if (exclusiveMode) {
+            pageBuffer.unpinPage(rootPage->id, splitRoot);
+        }
         // squash the two upserts
         innerNode.upserts.upserts[upsertIndex] =
                 std::move(squashUpserts(std::move(upsert),
                                         std::move(innerNode.upserts.upserts[upsertIndex])));
         pageBuffer.unpinPage(targetPage->id, true);
-        return;
-    }
-    // check for an upsert on the left
-    if (upsertIndex > 0 &&
-        upsertIndex <= innerNode.upserts.size &&
-        innerNode.upserts.upserts[upsertIndex - 1].key == upsert.key) {
-        pageBuffer.unpinPage(rootPage->id, splitRoot);
-        // squash the two upserts
-        innerNode.upserts.upserts[upsertIndex - 1] =
-                std::move(squashUpserts(std::move(upsert),
-                                        std::move(innerNode.upserts.upserts[upsertIndex - 1])));
-        pageBuffer.unpinPage(targetPage->id, true);
-        return;
+        return true;
     }
     // check if there are enough free slots
     if (innerNode.upserts.size < innerNode.upserts.upserts.size()) {
-        pageBuffer.unpinPage(rootPage->id, splitRoot);
+        if (exclusiveMode) {
+            pageBuffer.unpinPage(rootPage->id, splitRoot);
+        }
         // there is enough space in the root, insert sorted
         const std::size_t index = upsertIt - innerNode.upserts.upserts.begin();
         // shift to the right
@@ -898,14 +910,23 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
         innerNode.upserts.upserts[index] = std::move(upsert);
         innerNode.upserts.size++;
         pageBuffer.unpinPage(targetPage->id, true);
-        return;
+        return true;
     }
     // queue for level order traversal
     std::deque<std::pair<PageT*, MessageMap>> queue;// <node, messages>
     // we need to flush the target
-    MessageMap targetMap = removeMessages(innerNode, {std::move(upsert)}, MAX_FLUSH_SIZE);
+    MessageMap targetMap;
     // check if we need to split the inner node
-    if (innerNode.size + targetMap.size() > innerNode.pivots.size()) {
+    if (innerNode.size + 1 > innerNode.pivots.size()) {
+        if (!exclusiveMode) {
+            // retry required (the parent was already freed)
+            pageBuffer.unpinPage(targetPage->id, false);
+            return false;
+        }
+        targetMap = std::move(removeMessages(innerNode,
+                                             {std::move(upsert)},
+                                             MAX_FLUSH_SIZE));
+        assert(targetMap.size() == 1);
         // split
         K middleKey;
         PageT& rightPage = splitInnerNode(innerNode, middleKey);
@@ -945,7 +966,12 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
             queue.emplace_back(&rightPage, std::move(rightMap));
         }
     } else {
-        pageBuffer.unpinPage(rootPage->id, splitRoot);
+        if (exclusiveMode) {
+            pageBuffer.unpinPage(rootPage->id, splitRoot);
+        }
+        targetMap = std::move(removeMessages(innerNode,
+                                             {std::move(upsert)},
+                                             MAX_FLUSH_SIZE));
         queue.emplace_back(targetPage, std::move(targetMap));
     }
     // main action: level order traversal
@@ -955,10 +981,12 @@ void BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert, Page
         assert(accessNode(*currentPage).nodeType() == NodeType::INNER);
         handleTraversalNode(currentPage, std::move(messageMap), queue);
     }
+    return true;
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
-void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, PageT* rootPage) {
+void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert,
+                                                       PageT* rootPage) {
     // must be called with the root page
     assert(rootPage != nullptr);
     assert(rootPage->id == header.rootID);
@@ -1031,6 +1059,8 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
                 newRootNode.size = 1;
                 // now swap with the root (this invalidates all references to the old root)
                 std::swap(newRoot.data, rootPage->data);
+                // set the leaf bool
+                header.rootLeaf = false;
                 // free the parent
                 pageBuffer.unpinPage(rootPage->id, true);
             }
@@ -1070,15 +1100,22 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert, Page
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 void BeTree<K, V, B, N, EPSILON>::upsert(Upsert<K, V> upsert) {
-    PageT* rootPage = &pageBuffer.pinPage(header.rootID, true);
+    PageT* rootPage = &pageBuffer.pinPage(header.rootID, header.rootLeaf);
     // first case: the root node is a leaf node (direct insert)
     if (accessNode(*rootPage).nodeType() == NodeType::LEAF) {
+        assert(header.rootLeaf);
         handleRootLeafUpsert(std::move(upsert), rootPage);
         return;
     }
     // second case: the root node is a root node
+    assert(!header.rootLeaf);
     assert(accessNode(*rootPage).nodeType() == NodeType::ROOT);
-    handleRootRootUpsert(std::move(upsert), rootPage);
+    bool success = handleRootRootUpsert(std::move(upsert), rootPage, false);
+    if (!success) {
+        // retry
+        rootPage = &pageBuffer.pinPage(header.rootID, true);
+        handleRootRootUpsert(std::move(upsert), rootPage, true);
+    }
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>

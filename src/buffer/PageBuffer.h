@@ -9,6 +9,7 @@
 #include <cinttypes>
 #include <cstddef>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <shared_mutex>
 #include <string>
@@ -58,7 +59,10 @@ private:
 public:
     std::uint64_t createPage();
     void deletePage(std::uint64_t);// assumes that the page is not pinned
-    Page<B>& pinPage(std::uint64_t, bool, bool = false);
+    // if ModeFunction != nullptr, exclusive is ignored
+    using ModeFunction = std::function<bool(Page<B>&)>;
+    Page<B>& pinPage(std::uint64_t, bool, bool = false,
+                     std::optional<ModeFunction> = std::nullopt);
     void unpinPage(std::uint64_t, bool);
 
     void flush();// not thread-safe
@@ -123,7 +127,9 @@ void PageBuffer<B, N>::deletePage(std::uint64_t id) {
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
-Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLoad) {
+Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
+                                   bool skipLoad, std::optional<ModeFunction> modeFunction) {
+    //std::cout << "pinning " << id << std::endl;
     bool retry;
     do {
         retry = false;
@@ -139,6 +145,9 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
             // unlock the queue
             queueLock.unlock();
             // lock the page
+            if (modeFunction) {
+                exclusive = (*modeFunction)(page);
+            }
             if (exclusive) {
                 page.mutex.lock();
             } else {
@@ -155,6 +164,9 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
             // unlock the queue
             queueLock.unlock();
             // lock the page
+            if (modeFunction) {
+                exclusive = (*modeFunction)(page);
+            }
             if (exclusive) {
                 page.mutex.lock();
             } else {
@@ -188,6 +200,9 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                 // unlock the page
             }
             // lock the page again
+            if (modeFunction) {
+                exclusive = (*modeFunction)(page);
+            }
             if (exclusive) {
                 page.mutex.lock();
             } else {
@@ -248,6 +263,9 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                         pageLock.unlock();
                     }
                     // lock the page again
+                    if (modeFunction) {
+                        exclusive = (*modeFunction)(page);
+                    }
                     if (exclusive) {
                         page.mutex.lock();
                     } else {
@@ -316,6 +334,9 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
                         pageLock.unlock();
                     }
                     // lock the page again
+                    if (modeFunction) {
+                        exclusive = (*modeFunction)(page);
+                    }
                     if (exclusive) {
                         page.mutex.lock();
                     } else {
@@ -337,6 +358,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive, bool skipLo
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
+    //std::cout << "unpinning " << id << std::endl;
     // lock the queue
     std::unique_lock queueLock(queueMutex);
     if (fifoQueue.contains(id)) {

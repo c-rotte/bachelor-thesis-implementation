@@ -7,49 +7,51 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <random>
+// #include "buffer/OptimalPageBuffer.h" // include this before the trees
+#include "btree/BTree.h"
+#include "betree/BeTree.h"
+#include "thirdparty/ThreadPool/ThreadPool.h"
 // --------------------------------------------------------------------------
 using namespace std;
+using namespace btree;
+using namespace betree;
 // --------------------------------------------------------------------------
 int main() {
-    filesystem::remove("/tmp/12345");
-    int fd = open("/tmp/12345", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    ftruncate(fd, 1);
-    for (size_t i = 1; i <= 10000; i++) {
-        thread thread1([fd, i]() {
-            for(int a = 0; a < 100; a++){
-                ftruncate(fd, i + 1 + (rand() % 5000));
-                //std::cout << 1 << std::endl;
-            }
-        });
-        thread thread2([fd, i]() {
-            vector<unsigned char> buf;
-            for (size_t j = 0; j < i; j++) {
-                buf.push_back(static_cast<unsigned char>(j % 256));
-            }
-            size_t r = pwrite(fd, buf.data(), buf.size(), 0);
-            if(r != buf.size()){
-                throw std::runtime_error("1");
-            }
-        });
-        thread1.join();
-        thread2.join();
 
-        vector<unsigned char> buf(i);
-        size_t r = pread(fd, buf.data(), buf.size(), 0);
-        if(r != buf.size()){
-            throw std::runtime_error("2");
-        }
-        for (size_t j = 0; j < i; j++) {
-            unsigned char c = buf[j];
-            if(static_cast<unsigned char>(j % 256) != c){
-                throw std::runtime_error("3");
-            }
-        }
-        std::cout << "passed " << i << std::endl;
+    static const string DIRNAME = "/tmp/tester_test_b_tree";
+    std::filesystem::remove_all(DIRNAME.c_str());
+
+    constexpr size_t BLOCK_SIZE = 4096;
+    constexpr size_t PAGE_AMOUNT = 6000;
+    auto tree = std::make_unique<BTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT>>(DIRNAME, 1.25);
+    vector<uint64_t> inserts(1000000);
+    iota(inserts.begin(), inserts.end(), 0);
+    shuffle(inserts.begin(), inserts.end(), default_random_engine());
+    for(uint64_t i : inserts){
+        tree->insert(i, i);
     }
+    ThreadPool threadPool(4);
+    vector<future<void>> calls;
+    {
+        for (uint64_t i: inserts) {
+            calls.emplace_back(threadPool.enqueue([&tree, i]() {
+                auto find = tree->find(i);
+                if(!find){
+                    throw std::runtime_error("not found");
+                }
+            }));
+        }
+        for (auto& call: calls) {
+            call.get();
+        }
+    }
+
+    //tree->flush();
 
     return 0;
 }

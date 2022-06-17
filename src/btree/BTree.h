@@ -3,6 +3,7 @@
 // --------------------------------------------------------------------------
 #include "BNode.h"
 #include "src/buffer/PageBuffer.h"
+#include "src/util/ErrorHandler.h"
 #include <algorithm>
 #include <atomic>
 #include <cinttypes>
@@ -95,19 +96,19 @@ BTree<K, V, B, N>::BTree(const std::string& path, double growthFactor)
     if (std::filesystem::exists(headerFile) && std::filesystem::is_regular_file(headerFile)) {
         fd = open(headerFile.c_str(), O_RDWR);
         if (pread(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-            throw std::runtime_error("Invalid btree header!");
+            util::raise("Invalid btree header!");
         }
     } else {
         fd = open(headerFile.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         if (fd < 0) {
-            throw std::runtime_error("Could not create the btree header!");
+            util::raise("Could not create the btree header!");
         }
         header.rootID = pageBuffer.createPage();
         // initialize the root node (leaf)
         initializeNode(pageBuffer.pinPage(header.rootID, true, true), true);
         pageBuffer.unpinPage(header.rootID, true);
         if (ftruncate(fd, sizeof(Header)) < 0) {
-            throw std::runtime_error("Could not increase the file size (btree).");
+            util::raise("Could not increase the file size (btree).");
         }
     }
 }
@@ -607,7 +608,7 @@ std::optional<V> BTree<K, V, B, N>::find(const K& key) {
 template<class K, class V, std::size_t B, std::size_t N>
 void BTree<K, V, B, N>::flush() {
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-        throw std::runtime_error("Could not save the header (btree).");
+        util::raise("Could not save the header (btree).");
     }
     pageBuffer.flush();
 }

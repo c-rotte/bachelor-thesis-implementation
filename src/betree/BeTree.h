@@ -3,6 +3,7 @@
 // --------------------------------------------------------------------------
 #include "BeNode.h"
 #include "src/buffer/PageBuffer.h"
+#include "src/util/ErrorHandler.h"
 #include <algorithm>
 #include <atomic>
 #include <cinttypes>
@@ -160,7 +161,7 @@ K findMedianKey(const C1& first, std::size_t firstSize,
         }
         low = partX + 1;
     }
-    throw std::invalid_argument("Invalid elements (not sorted?)");
+    util::raise("Invalid elements (not sorted?)");
 }
 // --------------------------------------------------------------------------
 }// namespace
@@ -265,19 +266,19 @@ BeTree<K, V, B, N, EPSILON>::BeTree(const std::string& path, double growthFactor
     if (std::filesystem::exists(headerFile) && std::filesystem::is_regular_file(headerFile)) {
         fd = open(headerFile.c_str(), O_RDWR);
         if (pread(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-            throw std::runtime_error("Invalid betree header!");
+            util::raise("Invalid betree header!");
         }
     } else {
         fd = open(headerFile.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         if (fd < 0) {
-            throw std::runtime_error("Could not create the betree header!");
+            util::raise("Could not create the betree header!");
         }
         header.rootID = pageBuffer.createPage();
         // initialize the root node (leaf)
         initializeNode(pageBuffer.pinPage(header.rootID, true, true), NodeType::LEAF);
         pageBuffer.unpinPage(header.rootID, true);
         if (ftruncate(fd, sizeof(Header)) < 0) {
-            throw std::runtime_error("Could not increase the file size (betree).");
+            util::raise("Could not increase the file size (betree).");
         }
     }
 }
@@ -1304,7 +1305,7 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 void BeTree<K, V, B, N, EPSILON>::flush() {
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-        throw std::runtime_error("Could not save the header (betree).");
+        util::raise("Could not save the header (betree).");
     }
     pageBuffer.flush();
 }
@@ -1378,7 +1379,7 @@ std::ostream& operator<<(std::ostream& out, BeTree<K, V, B, N, EPSILON>& tree) {
                 queue.push(childID);
             }
         } else {
-            throw std::runtime_error("Invalid node type!");
+            util::raise("Invalid node type!");
         }
         tree.pageBuffer.unpinPage(currentID, false);
     }

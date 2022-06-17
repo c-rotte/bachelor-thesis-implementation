@@ -1,6 +1,7 @@
 #ifndef B_EPSILON_BENODE_H
 #define B_EPSILON_BENODE_H
 // --------------------------------------------------------------------------
+#include "src/util/ErrorHandler.h"
 #include <array>
 #include <cassert>
 #include <cinttypes>
@@ -202,7 +203,7 @@ BeNodeWrapper<K, V, PAGE_SIZE, EPSILON>::BeNodeWrapper(unsigned char type)
         new (data.data()) BeLeafNodeT;
         return;
     }
-    throw std::runtime_error("Invalid node type!");
+    util::raise("Invalid node type!");
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t PAGE_SIZE, short EPSILON>

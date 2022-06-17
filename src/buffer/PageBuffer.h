@@ -4,6 +4,7 @@
 #include "queue/FIFOQueue.h"
 #include "queue/LRUQueue.h"
 #include "src/file/SegmentManager.h"
+#include "src/util/ErrorHandler.h"
 #include <array>
 #include <atomic>
 #include <cinttypes>
@@ -14,7 +15,6 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_set>
-#include <tbb/concurrent_unordered_map.h>
 // --------------------------------------------------------------------------
 namespace buffer {
 // --------------------------------------------------------------------------
@@ -228,7 +228,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
                         // re-lock the table + queue
                         lockPageTable(true);
                     } else {
-                        if(!exclusivePageTableLock){
+                        if (!exclusivePageTableLock) {
                             // unlock the queue
                             unlockPageTable(exclusivePageTableLock);
                             // re-lock
@@ -305,7 +305,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
                         // re-lock the table + queue
                         lockPageTable(true);
                     } else {
-                        if(!exclusivePageTableLock){
+                        if (!exclusivePageTableLock) {
                             // unlock the queue
                             unlockPageTable(exclusivePageTableLock);
                             // re-lock
@@ -358,7 +358,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
             }
         }
         // no free slot was found -> abort
-        throw std::runtime_error("Buffer is full!");
+        util::raise("Buffer is full!");
     } while (true);
 }
 // --------------------------------------------------------------------------
@@ -379,7 +379,7 @@ void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
         return;
     }
     pageTableLock.unlock();
-    throw std::runtime_error("Invalid page id!");// unlock the queue
+    util::raise("Invalid page id!");// unlock the queue
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>

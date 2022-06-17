@@ -4,6 +4,7 @@
 #include "queue/FIFOQueue.h"
 #include "queue/LRUQueue.h"
 #include "src/file/SegmentManager.h"
+#include "src/util/ErrorHandler.h"
 #include <array>
 #include <atomic>
 #include <cinttypes>
@@ -74,21 +75,21 @@ PageBuffer<B, N>::PageBuffer(const std::string& path, double) : pages() {
     if (std::filesystem::exists(filePath) && std::filesystem::is_regular_file(path)) {
         std::size_t fileSize = std::filesystem::file_size(filePath);
         if (fileSize == 0 || fileSize != B + B * N) {
-            throw std::runtime_error("Invalid file size.");
+            util::raise("Invalid file size.");
         }
         fd = open(filePath.c_str(), O_RDWR);
         if (pread(fd, pages.data(), B * N, 0) != B * N) {
-            throw std::runtime_error("Invalid file!");
+            util::raise("Invalid file!");
         }
     } else {
         std::filesystem::create_directories(path);
         fd = open(filePath.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         if (fd < 0) {
-            throw std::runtime_error("Could not create the buffer file!");
+            util::raise("Could not create the buffer file!");
         }
         header.idCounter = 0;
         if (ftruncate(fd, B + B * N) < 0) {
-            throw std::runtime_error("Could not increase the file size (buffer file).");
+            util::raise("Could not increase the file size (buffer file).");
         }
     }
 }
@@ -97,7 +98,7 @@ template<std::size_t B, std::size_t N>
 std::uint64_t PageBuffer<B, N>::createPage() {
     std::size_t id = ++header.idCounter;
     if (id >= pages.size()) {
-        throw std::runtime_error("Full Buffer!");
+        util::raise("Full Buffer!");
     }
     pages[id].id = id;
     return id;
@@ -107,7 +108,7 @@ template<std::size_t B, std::size_t N>
 Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
                                    bool, std::optional<ModeFunction> modeFunction) {
     if (id >= pages.size()) {
-        throw std::runtime_error("Invalid id!");
+        util::raise("Invalid id!");
     }
     auto& page = pages[id];
     if (modeFunction) {
@@ -124,7 +125,7 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool) {
     if (id >= pages.size()) {
-        throw std::runtime_error("Invalid id!");
+        util::raise("Invalid id!");
     }
     pages[id].mutex.unlock();
 }
@@ -133,10 +134,10 @@ template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::flush() {
     std::cout << "flushing " << header.idCounter << " pages" << std::endl;
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-        throw std::runtime_error("Could not save the header (buffer file).");
+        util::raise("Could not save the header (buffer file).");
     }
     if (pwrite(fd, pages.data(), B * header.idCounter, 0) != B * header.idCounter) {
-        throw std::runtime_error("Could not save the pages (buffer file).");
+        util::raise("Could not save the pages (buffer file).");
     }
 }
 // --------------------------------------------------------------------------

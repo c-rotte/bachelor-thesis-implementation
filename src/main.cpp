@@ -26,23 +26,26 @@ int main() {
     static const string DIRNAME = "/tmp/tester_test_b_tree";
     std::filesystem::remove_all(DIRNAME.c_str());
 
-    constexpr size_t BLOCK_SIZE = 4096;
-    constexpr size_t PAGE_AMOUNT = 6000;
-    auto tree = std::make_unique<BTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT>>(DIRNAME, 1.25);
-    vector<uint64_t> inserts(1000000);
-    iota(inserts.begin(), inserts.end(), 0);
-    shuffle(inserts.begin(), inserts.end(), default_random_engine());
-    for(uint64_t i : inserts){
-        tree->insert(i, i);
+    constexpr size_t BLOCK_SIZE = 8192;
+    constexpr size_t PAGE_AMOUNT = 8789062;
+    using Value = std::array<unsigned char, 100>;
+    auto tree = std::make_unique<BTree<uint64_t, Value, BLOCK_SIZE, PAGE_AMOUNT>>(DIRNAME, 1.5);
+    for(std::size_t i = 0; i < 320000000; i++){
+        std::size_t key = rand();
+        Value value;
+        std::fill(value.begin(), value.end(), key);
+        tree->insert(key, std::move(value));
     }
-    ThreadPool threadPool(4);
+    ThreadPool threadPool(8);
     vector<future<void>> calls;
     {
-        for (uint64_t i: inserts) {
-            calls.emplace_back(threadPool.enqueue([&tree, i]() {
-                auto find = tree->find(i);
-                if(!find){
-                    throw std::runtime_error("not found");
+        for (std::size_t i = 0; i < 8; i++) {
+            calls.emplace_back(threadPool.enqueue([&tree]() {
+                for(std::size_t i = 0; i < 320000000 / 8; i++){
+                    std::size_t key = rand();
+                    Value value;
+                    std::fill(value.begin(), value.end(), key);
+                    tree->insert(key, std::move(value));
                 }
             }));
         }

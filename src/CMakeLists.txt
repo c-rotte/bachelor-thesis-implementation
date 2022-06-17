@@ -8,7 +8,7 @@ set(B_EPSILON_SOURCES
         betree/BeNode.cpp
         btree/BTree.cpp
         btree/BNode.cpp
-        util/ErrorHandler.cpp)
+        )
 
 add_library(b_epsilon_core ${B_EPSILON_SOURCES})
 target_include_directories(b_epsilon_core PUBLIC ${CMAKE_SOURCE_DIR})

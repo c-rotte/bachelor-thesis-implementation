@@ -1,0 +1,53 @@
+[
+    {
+        "name": "Read",
+        "records_count": 320000000,
+        "operations_count": 320000000,
+        "read_proportion": 1.0,
+        "key_dist": "zipfian",
+        "value_length": 100
+    },
+    {
+        "name": "ReadUpdate_50_50",
+        "records_count": 320000000,
+        "operations_count": 320000000,
+        "read_proportion": 0.5,
+        "update_proportion": 0.5,
+        "key_dist": "zipfian",
+        "value_length": 100
+    },
+    {
+        "name": "ReadUpsert_95_5",
+        "records_count": 320000000,
+        "operations_count": 640000000,
+        "read_proportion": 0.95,
+        "upsert_proportion": 0.05,
+        "key_dist": "latest",
+        "value_length": 100
+    },
+    {
+        "name": "Remove",
+        "records_count": 320000000,
+        "operations_count": 48000000,
+        "remove_proportion": 1.0,
+        "key_dist": "zipfian",
+        "value_length": 100
+    },
+    {
+        "name": "ReadUpsert_50_50",
+        "records_count": 320000000,
+        "operations_count": 320000000,
+        "read_proportion": 0.5,
+        "upsert_proportion": 0.5,
+        "key_dist": "zipfian",
+        "value_length": 100
+    },
+    {
+        "name": "Upsert",
+        "records_count": 320000000,
+        "operations_count": 320000000,
+        "upsert_proportion": 1,
+        "key_dist": "zipfian",
+        "value_length": 100
+    }
+]

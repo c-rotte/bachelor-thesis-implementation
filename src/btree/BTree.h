@@ -10,7 +10,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <execution>
 #include <fcntl.h>
 #include <filesystem>
 #include <functional>
@@ -31,6 +30,7 @@ class BTree {
 
     using BNodeWrapperT = BNodeWrapper<K, V, B>;
     using PageT = buffer::Page<B>;
+
 
     // a node must fit onto a page
     static_assert(sizeof(BNodeWrapperT) == B);

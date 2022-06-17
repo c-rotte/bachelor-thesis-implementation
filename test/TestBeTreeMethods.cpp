@@ -22,6 +22,7 @@ void setup() {
 // --------------------------------------------------------------------------
 namespace betree {
 // --------------------------------------------------------------------------
+/*
 TEST(BeTreeMethods, splitLeafNode) {
     setup();
     constexpr size_t BLOCK_SIZE = 256;
@@ -91,6 +92,7 @@ TEST(BeTreeMethods, splitLeafNode) {
         tree.pageBuffer.unpinPage(rightPage.id, true);
     }
 }
+ */
 // --------------------------------------------------------------------------
 TEST(BeTreeMethods, splitInnerNode) {
     setup();

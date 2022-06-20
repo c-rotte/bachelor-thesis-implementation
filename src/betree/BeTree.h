@@ -299,28 +299,28 @@ typename BeTree<K, V, B, N, EPSILON>::PageT&
 BeTree<K, V, B, N, EPSILON>::splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT& leafNode,
                                            K medianKey, K& resultKey) {
     assert(leafNode.size >= 2);
-    auto medianIt = std::lower_bound(leafNode.keys.begin(),
+    auto medianIt = std::upper_bound(leafNode.keys.begin(),
                                      leafNode.keys.begin() + leafNode.size,
                                      medianKey);
     std::size_t medianIndex = medianIt - leafNode.keys.begin();
-    if (medianIndex >= leafNode.size) {
-        medianIndex = leafNode.size - 1;
+    if (medianIndex > leafNode.size) {
+        medianIndex = leafNode.size;
     }
-    resultKey = leafNode.keys[medianIndex];
+    resultKey = medianKey;
     // create a new leaf node
     auto& rightPage = pageBuffer.pinPage(pageBuffer.createPage(), true, true);
     initializeNode(rightPage, NodeType::LEAF);
     assert(accessNode(rightPage).nodeType() == NodeType::LEAF);
     auto& rightLeaf = accessNode(rightPage).asLeaf();
     // copy the right pairs to the new node
-    std::move(leafNode.keys.begin() + medianIndex + 1,
+    std::move(leafNode.keys.begin() + medianIndex,
               leafNode.keys.begin() + leafNode.size,
               rightLeaf.keys.begin());
-    std::move(leafNode.values.begin() + medianIndex + 1,
+    std::move(leafNode.values.begin() + medianIndex,
               leafNode.values.begin() + leafNode.size,
               rightLeaf.values.begin());
     // adjust the sizes
-    rightLeaf.size = leafNode.size - medianIndex - 1;
+    rightLeaf.size = leafNode.size - medianIndex;
     leafNode.size -= rightLeaf.size;
     return rightPage;
 }
@@ -605,12 +605,16 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             std::size_t futureSize = leafChild.size;
             std::unordered_set<K> seenKeys;
             for (const auto& upsert: vector) {
-                if (upsert.type != UpsertType::INSERT) {
+                if (upsert.type != UpsertType::INSERT && upsert.type != UpsertType::DELETE) {
                     continue;
                 }
                 bool seen = seenKeys.contains(upsert.key);
                 if (!seen) {
-                    seenKeys.insert(upsert.key);
+                    if (upsert.type == UpsertType::INSERT) {
+                        seenKeys.insert(upsert.key);
+                    } else {
+                        seenKeys.erase(upsert.key);
+                    }
                     auto it = std::lower_bound(leafChild.keys.begin(),
                                                leafChild.keys.begin() + leafChild.size, upsert.key);
                     seen = static_cast<std::size_t>(leafChild.keys.begin() - it) <
@@ -618,7 +622,13 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
                            * it == upsert.key;
                 }
                 // seen is true if the key already exists
-                futureSize += !seen;
+                if (upsert.type == UpsertType::INSERT) {
+                    // insert
+                    futureSize += !seen;
+                } else if (futureSize >= 1) {
+                    // delete
+                    futureSize -= seen;
+                }
                 if (futureSize > leafChild.keys.size()) {
                     needToSplit = true;
                     break;

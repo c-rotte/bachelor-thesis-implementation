@@ -232,8 +232,7 @@ bool BTree<K, V, B, N>::insertTraversal(K key, V value, PageT* parentPage,
                     targetPage = &childPage;
                 } else {
                     // adjust the key index
-                    auto& rightNode = accessNode(rightPage).asLeaf();
-                    keyIndex -= rightNode.size;
+                    keyIndex -= leafNode.size;
                     pageBuffer.unpinPage(childPage.id, true);
                     targetPage = &rightPage;
                 }

@@ -79,7 +79,7 @@ struct BeLeafNode {
     std::uint64_t size = 0;
 };
 // --------------------------------------------------------------------------
-namespace {
+namespace sizes {
 // --------------------------------------------------------------------------
 // sizeof(buffer) = B - B^epsilon
 // ->
@@ -157,7 +157,7 @@ class BeNodeWrapper {
 
 public:
     // 1 byte is needed for the bool
-    using NodeSizesT = NodeSizes<K, V, PAGE_SIZE - 1, EPSILON>;
+    using NodeSizesT = sizes::NodeSizes<K, V, PAGE_SIZE - 1, EPSILON>;
     using BeRootNodeT = BeRootNode<K, NodeSizesT::ROOT_N>;
     using BeInnerNodeT = BeInnerNode<K, V, NodeSizesT::INNER_B_N, NodeSizesT::INNER_N>;
     using BeLeafNodeT = BeLeafNode<K, V, NodeSizesT::LEAF_N>;

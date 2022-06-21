@@ -212,54 +212,10 @@ TEST(BeTreeMethods, mergeUpserts) {
                  secondVec.begin(), secondVec.end(),
                  back_inserter(resVec));
     ASSERT_EQ(resVec.size(), 20);
-    for(size_t i = 0; i < 20; i++){
+    for (size_t i = 0; i < 20; i++) {
         ASSERT_EQ(i, resVec[i].key);
     }
 }
-// --------------------------------------------------------------------------
-// TODO: adjust for different sizeof(Upsert)
-/*
-TEST(BeTreeMethods, removeMessages) {
-    setup();
-    constexpr size_t BLOCK_SIZE = 256;
-    constexpr size_t PAGE_AMOUNT = 100;
-    using BeTreeT = BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50>;
-    BeTreeT tree(DIRNAME, 1.25);
-    {
-        BeTreeT::BeNodeWrapperT::BeInnerNodeT innerNode;
-        for (std::size_t i = 0; i < 5; i++) {
-            Upsert<uint64_t, uint64_t> upsert;
-            upsert.key = i * 2;
-            innerNode.upserts.upserts[i] = std::move(upsert);
-            innerNode.upserts.size++;
-        }
-        innerNode.pivots[0] = 4;
-        innerNode.pivots[1] = 6;
-        innerNode.children[0] = 2;
-        innerNode.children[1] = 5;
-        innerNode.children[2] = 7;
-        innerNode.size = 2;
-        std::vector<Upsert<uint64_t, uint64_t>> additionalUpserts;
-        for (std::size_t i = 10; i <= 12; i++) {
-            Upsert<uint64_t, uint64_t> upsert;
-            upsert.key = i;
-            upsert.timeStamp = 1;
-            additionalUpserts.push_back(std::move(upsert));
-        }
-
-        BeTreeT::MessageMap messageMap = tree.removeMessages(
-                innerNode, additionalUpserts,
-                BeTreeT::BeNodeWrapperT::NodeSizesT::LEAF_N / 2);
-        ASSERT_EQ(messageMap.size(), 1);
-        ASSERT_EQ(messageMap[2].size(), 4);
-        const vector<uint64_t> expectedUpserts = {8, 10, 11, 12};
-        for (std::size_t i = 0; i < messageMap[1].size(); i++) {
-            ASSERT_EQ(messageMap[2][i].key, expectedUpserts[i]);
-        }
-        ASSERT_EQ(innerNode.upserts.size, 4);
-    }
-}
- */
 // --------------------------------------------------------------------------
 }// namespace betree
  // --------------------------------------------------------------------------

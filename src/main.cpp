@@ -1,28 +1,41 @@
-#include <array>
-#include <cassert>
-#include <cinttypes>
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
-#include <fcntl.h>
-#include <filesystem>
+#include "betree/BeNode.h"
+#include "btree/BNode.h"
 #include <iostream>
-#include <memory>
-#include <thread>
-#include <unistd.h>
-#include <vector>
-#include <random>
-// #include "buffer/OptimalPageBuffer.h" // include this before the trees
-#include "btree/BTree.h"
-#include "betree/BeTree.h"
-#include "thirdparty/ThreadPool/ThreadPool.h"
 // --------------------------------------------------------------------------
 using namespace std;
-using namespace btree;
-using namespace betree;
+namespace besizes = betree::sizes;
+namespace bsizes = btree::sizes;
+// --------------------------------------------------------------------------
+constexpr std::size_t BLOCK_SIZE = 8192;
+using Key = std::uint64_t;
+using Value = std::array<unsigned char, 100>;
+// --------------------------------------------------------------------------
+template<std::size_t N>
+struct BeNodeForLoop {
+    template<std::size_t EPSILON>
+    static void iteration() {
+        using NodeSizesT = besizes::NodeSizes<Key, Value, BLOCK_SIZE, EPSILON>;
+        std::cout << "epsilon=" << EPSILON
+                  << ": LeafN=" << NodeSizesT::LEAF_N
+                  << ", InnerN=" << NodeSizesT::INNER_N
+                  << ", InnerBN=" << NodeSizesT::INNER_B_N
+                  << ", RootN=" << NodeSizesT::ROOT_N
+                  << std::endl;
+        if constexpr (EPSILON + 1 < N) {
+            BeNodeForLoop<N>::iteration<EPSILON + 1>();
+        }
+    }
+};
 // --------------------------------------------------------------------------
 int main() {
-
+    std::cout << "BeNode:\n";
+    BeNodeForLoop<96>::iteration<5>();
+    std::cout << "\n";
+    using NodeSizesT = bsizes::NodeSizes<Key, Value, BLOCK_SIZE>;
+    std::cout << "BNode:\n"
+              << "LeafN=" << NodeSizesT::LEAF_N
+              << ", InnerN=" << NodeSizesT::INNER_N
+              << std::endl;
     return 0;
 }
 // --------------------------------------------------------------------------

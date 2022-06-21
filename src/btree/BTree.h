@@ -32,7 +32,6 @@ class BTree {
     using BNodeWrapperT = BNodeWrapper<K, V, B>;
     using PageT = buffer::Page<B>;
 
-
     // a node must fit onto a page
     static_assert(sizeof(BNodeWrapperT) == B);
     static_assert(alignof(BNodeWrapperT) == alignof(PageT));

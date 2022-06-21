@@ -7,7 +7,7 @@
 // --------------------------------------------------------------------------
 namespace util {
 // --------------------------------------------------------------------------
-inline void raise(const std::string& what) {
+[[noreturn]] inline void raise(const std::string& what) {
     std::cerr << "Thread ["
               << std::this_thread::get_id()
               << "] raised an exception: \""

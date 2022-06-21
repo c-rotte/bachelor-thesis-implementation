@@ -6,7 +6,7 @@ using namespace std;
 namespace besizes = betree::sizes;
 namespace bsizes = btree::sizes;
 // --------------------------------------------------------------------------
-constexpr std::size_t BLOCK_SIZE = 8192;
+constexpr std::size_t BLOCK_SIZE = 16384;
 using Key = std::uint64_t;
 using Value = std::array<unsigned char, 100>;
 // --------------------------------------------------------------------------

@@ -38,36 +38,40 @@ TEST(PageBuffer, SingleThreaded) {
     }
     {
         unordered_set<size_t> idSet;
+        unordered_set<Page<BLOCK_SIZE>*> pageSet;
         for (int i = 0; i < 100; i++) {
             size_t id = ids[rand() % ids.size()];
             if (idSet.contains(id)) {
                 continue;
             }
             idSet.insert(id);
-            pageBuffer.pinPage(id, rand() % 2, true);
+            auto& page = pageBuffer.pinPage(id, rand() % 2, true);
+            pageSet.insert(&page);
         }
-        for (size_t id: idSet) {
-            pageBuffer.unpinPage(id, rand() % 2);
+        for (auto* pagePtr: pageSet) {
+            pageBuffer.unpinPage(*pagePtr, rand() % 2);
         }
     }
     for (size_t id: ids) {
         auto& page = pageBuffer.pinPage(id, rand() % 2, true);
         ASSERT_EQ(page.id, id);
         page.data.fill(page.id % 256);
-        pageBuffer.unpinPage(id, true);
+        pageBuffer.unpinPage(page, true);
     }
     {
         unordered_set<size_t> idSet;
+        unordered_set<Page<BLOCK_SIZE>*> pageSet;
         for (int i = 0; i < 100; i++) {
             size_t id = ids[rand() % ids.size()];
             if (idSet.contains(id)) {
                 continue;
             }
             idSet.insert(id);
-            pageBuffer.pinPage(id, rand() % 2);
+            auto& page = pageBuffer.pinPage(id, rand() % 2);
+            pageSet.insert(&page);
         }
-        for (size_t id: idSet) {
-            pageBuffer.unpinPage(id, rand() % 2);
+        for (auto* pagePtr: pageSet) {
+            pageBuffer.unpinPage(*pagePtr, rand() % 2);
         }
     }
     for (size_t id: ids) {
@@ -76,7 +80,7 @@ TEST(PageBuffer, SingleThreaded) {
         for (unsigned char c: page.data) {
             ASSERT_EQ(c, id % 256);
         }
-        pageBuffer.unpinPage(id, false);
+        pageBuffer.unpinPage(page, false);
     }
 }
 // --------------------------------------------------------------------------
@@ -97,36 +101,40 @@ TEST(PageBuffer, KeepDataSingleThreaded) {
         }
         {
             unordered_set<size_t> idSet;
+            unordered_set<Page<BLOCK_SIZE>*> pageSet;
             for (int i = 0; i < 100; i++) {
                 size_t id = ids[rand() % ids.size()];
                 if (idSet.contains(id)) {
                     continue;
                 }
                 idSet.insert(id);
-                pageBuffer.pinPage(id, rand() % 2, true);
+                auto& page = pageBuffer.pinPage(id, rand() % 2, true);
+                pageSet.insert(&page);
             }
-            for (size_t id: idSet) {
-                pageBuffer.unpinPage(id, rand() % 2);
+            for (auto* pagePtr: pageSet) {
+                pageBuffer.unpinPage(*pagePtr, rand() % 2);
             }
         }
         for (size_t id: ids) {
             auto& page = pageBuffer.pinPage(id, rand() % 2, true);
             ASSERT_EQ(page.id, id);
             page.data.fill(page.id % 256);
-            pageBuffer.unpinPage(id, true);
+            pageBuffer.unpinPage(page, true);
         }
         {
             unordered_set<size_t> idSet;
+            unordered_set<Page<BLOCK_SIZE>*> pageSet;
             for (int i = 0; i < 100; i++) {
                 size_t id = ids[rand() % ids.size()];
                 if (idSet.contains(id)) {
                     continue;
                 }
                 idSet.insert(id);
-                pageBuffer.pinPage(id, rand() % 2);
+                auto& page = pageBuffer.pinPage(id, rand() % 2);
+                pageSet.insert(&page);
             }
-            for (size_t id: idSet) {
-                pageBuffer.unpinPage(id, rand() % 2);
+            for (auto* pagePtr: pageSet) {
+                pageBuffer.unpinPage(*pagePtr, rand() % 2);
             }
         }
         for (size_t id: ids) {
@@ -135,7 +143,7 @@ TEST(PageBuffer, KeepDataSingleThreaded) {
             for (unsigned char c: page.data) {
                 ASSERT_EQ(c, id % 256);
             }
-            pageBuffer.unpinPage(id, false);
+            pageBuffer.unpinPage(page, false);
         }
         pageBuffer.flush();
     }
@@ -146,7 +154,7 @@ TEST(PageBuffer, KeepDataSingleThreaded) {
         for (unsigned char c: page.data) {
             ASSERT_EQ(c, id % 256);
         }
-        pageBuffer.unpinPage(id, false);
+        pageBuffer.unpinPage(page, false);
     }
 }
 // --------------------------------------------------------------------------
@@ -196,7 +204,7 @@ TEST(PageBuffer, MultiThreaded) {
             auto& page = pageBuffer.pinPage(id, true, true);
             ASSERT_EQ(page.id, id);
             page.data.fill(page.id % 256);
-            pageBuffer.unpinPage(id, true);
+            pageBuffer.unpinPage(page, true);
         }));
     }
     for (auto& call: calls) {
@@ -207,9 +215,9 @@ TEST(PageBuffer, MultiThreaded) {
         for (int i = 0; i < 100; i++) {
             size_t id = ids[rand() % ids.size()];
             calls.emplace_back(threadPool.enqueue([id, &pageBuffer]() {
-                pageBuffer.pinPage(id, rand() % 2);
+                auto& page = pageBuffer.pinPage(id, rand() % 2);
                 this_thread::sleep_for(chrono::milliseconds(100));
-                pageBuffer.unpinPage(id, rand() % 2);
+                pageBuffer.unpinPage(page, rand() % 2);
             }));
         }
         for (auto& call: calls) {
@@ -224,7 +232,7 @@ TEST(PageBuffer, MultiThreaded) {
             ASSERT_EQ(page.id, id);
             page.data.fill(page.id % 256);
             this_thread::sleep_for(chrono::milliseconds(100));
-            pageBuffer.unpinPage(id, true);
+            pageBuffer.unpinPage(page, true);
         }));
     }
     for (auto& call: calls) {
@@ -235,9 +243,9 @@ TEST(PageBuffer, MultiThreaded) {
         for (int i = 0; i < 100; i++) {
             size_t id = ids[rand() % ids.size()];
             calls.emplace_back(threadPool.enqueue([id, &pageBuffer]() {
-                pageBuffer.pinPage(id, rand() % 2);
+                auto& page = pageBuffer.pinPage(id, rand() % 2);
                 this_thread::sleep_for(chrono::milliseconds(100));
-                pageBuffer.unpinPage(id, rand() % 2);
+                pageBuffer.unpinPage(page, rand() % 2);
             }));
         }
         for (auto& call: calls) {
@@ -254,7 +262,7 @@ TEST(PageBuffer, MultiThreaded) {
             for (unsigned char c: page.data) {
                 ASSERT_EQ(c, id % 256);
             }
-            pageBuffer.unpinPage(id, false);
+            pageBuffer.unpinPage(page, false);
         }));
     }
     for (int i = 0; i < 20; i++) {
@@ -267,7 +275,7 @@ TEST(PageBuffer, MultiThreaded) {
             for (unsigned char c: page.data) {
                 ASSERT_EQ(c, id % 256);
             }
-            pageBuffer.unpinPage(id, false);
+            pageBuffer.unpinPage(page, false);
         });
     }
     for (auto& call: calls) {
@@ -291,7 +299,7 @@ TEST(PageBuffer, MultiThreaded2) {
                     auto& page = pageBuffer.pinPage(id, true, true);
                     ASSERT_EQ(page.id, id);
                     page.data.fill(id % 256);
-                    pageBuffer.unpinPage(id, true);
+                    pageBuffer.unpinPage(page, true);
                 }
                 {
                     auto& page = pageBuffer.pinPage(id, false);
@@ -299,7 +307,7 @@ TEST(PageBuffer, MultiThreaded2) {
                     for (unsigned char c: page.data) {
                         ASSERT_EQ(c, id % 256);
                     }
-                    pageBuffer.unpinPage(id, false);
+                    pageBuffer.unpinPage(page, false);
                 }
             }));
         }

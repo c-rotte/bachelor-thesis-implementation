@@ -66,7 +66,7 @@ public:
     using ModeFunction = std::function<bool(Page<B>&)>;
     Page<B>& pinPage(std::uint64_t, bool, bool = false,
                      std::optional<ModeFunction> = std::nullopt);
-    void unpinPage(std::uint64_t, bool);
+    void unpinPage(Page<B>&, bool);
 
     void flush();// not thread-safe
 
@@ -363,23 +363,14 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
-void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool dirty) {
-    // lock the page table
-    std::shared_lock pageTableLock(tableMutex);
-    if (pageTable.contains(id)) {
-        std::size_t index = pageTable[id];
-        auto& page = pages[index];
-        assert(page.pins >= 1);
-        if (dirty) {
-            page.dirty = true;// set page to dirty
-        }
-        --page.pins;
-        pageTableLock.unlock();
-        page.mutex.unlock();// release the page lock
-        return;
+void PageBuffer<B, N>::unpinPage(Page<B>& page, bool dirty) {
+    // release the page lock
+    page.mutex.unlock();
+    assert(page.pins >= 1);
+    if (dirty) {
+        page.dirty = true;// set page to dirty
     }
-    pageTableLock.unlock();
-    util::raise("Invalid page id!");// unlock the queue
+    --page.pins;
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>

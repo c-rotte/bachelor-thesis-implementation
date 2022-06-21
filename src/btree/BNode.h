@@ -26,7 +26,7 @@ struct BLeafNode {
     std::uint64_t size = 0;
 };
 // --------------------------------------------------------------------------
-namespace {
+namespace sizes {
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t TOTAL_SIZE>
 struct NodeSizes {
@@ -68,7 +68,7 @@ class BNodeWrapper {
 
 public:
     // 1 byte is needed for the bool
-    using NodeSizesT = NodeSizes<K, V, PAGE_SIZE - 1>;
+    using NodeSizesT = sizes::NodeSizes<K, V, PAGE_SIZE - 1>;
     using BInnerNodeT = BInnerNode<K, NodeSizesT::INNER_N>;
     using BLeafNodeT = BLeafNode<K, V, NodeSizesT::LEAF_N>;
 

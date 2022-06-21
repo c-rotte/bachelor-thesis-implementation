@@ -27,7 +27,7 @@ db_names = [
     #'leveldb',
     #'wiredtiger',
     #'lmdb',
-    # 'betree',
+    #'betree',
     'btree'
 ]
 
@@ -115,8 +115,6 @@ def run(db_name: str, size: int, threads_count: int, workload_names: list) -> No
 
 
 def main() -> None:
-    if os.geteuid() != 0:
-        sys.exit('Run as sudo!')
 
     if cleanup_previous:
         print('Cleanup...')

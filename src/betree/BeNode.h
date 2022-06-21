@@ -1,6 +1,7 @@
 #ifndef B_EPSILON_BENODE_H
 #define B_EPSILON_BENODE_H
 // --------------------------------------------------------------------------
+#include "src/util/ErrorHandler.h"
 #include <array>
 #include <cassert>
 #include <cinttypes>
@@ -78,7 +79,7 @@ struct BeLeafNode {
     std::uint64_t size = 0;
 };
 // --------------------------------------------------------------------------
-namespace {
+namespace sizes {
 // --------------------------------------------------------------------------
 // sizeof(buffer) = B - B^epsilon
 // ->
@@ -156,7 +157,7 @@ class BeNodeWrapper {
 
 public:
     // 1 byte is needed for the bool
-    using NodeSizesT = NodeSizes<K, V, PAGE_SIZE - 1, EPSILON>;
+    using NodeSizesT = sizes::NodeSizes<K, V, PAGE_SIZE - 1, EPSILON>;
     using BeRootNodeT = BeRootNode<K, NodeSizesT::ROOT_N>;
     using BeInnerNodeT = BeInnerNode<K, V, NodeSizesT::INNER_B_N, NodeSizesT::INNER_N>;
     using BeLeafNodeT = BeLeafNode<K, V, NodeSizesT::LEAF_N>;
@@ -202,7 +203,7 @@ BeNodeWrapper<K, V, PAGE_SIZE, EPSILON>::BeNodeWrapper(unsigned char type)
         new (data.data()) BeLeafNodeT;
         return;
     }
-    throw std::runtime_error("Invalid node type!");
+    util::raise("Invalid node type!");
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t PAGE_SIZE, short EPSILON>

@@ -3,6 +3,7 @@
 // --------------------------------------------------------------------------
 #include "BeNode.h"
 #include "src/buffer/PageBuffer.h"
+#include "src/util/ErrorHandler.h"
 #include <algorithm>
 #include <atomic>
 #include <cinttypes>
@@ -10,7 +11,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <execution>
 #include <fcntl.h>
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -119,6 +119,51 @@ OutputIt mergeUpserts(
     return std::move(secondBegin, secondEnd, outputBegin);
 }
 // --------------------------------------------------------------------------
+template<class K, class V>
+K extractKey(const Upsert<K, V>& upsert) {
+    return upsert.key;
+}
+// --------------------------------------------------------------------------
+template<class K>
+K extractKey(const K& key) {
+    return key;
+}
+// --------------------------------------------------------------------------
+template<class K, class C1, class C2>
+K findMedianKey(const C1& first, std::size_t firstSize,
+                const C2& second, std::size_t secondSize)
+// finds the median key of two sorted inputs
+// (adapted from https://leetcode.com/problems/median-of-two-sorted-arrays/)
+{
+    assert(firstSize <= first.size());
+    assert(secondSize <= second.size());
+    if (firstSize > secondSize) {
+        return findMedianKey<K>(second, secondSize,
+                                first, firstSize);
+    }
+    std::size_t low = 0, high = firstSize;
+    const std::size_t combinedSize = firstSize + secondSize;
+    // perform binary search
+    while (low <= high) {
+        std::size_t partX = (low + high) / 2;
+        std::size_t partY = (combinedSize + 1) / 2 - partX;
+        K leftX = (partX == 0) ? 0 : extractKey(first[partX - 1]);
+        K rightX = partX >= firstSize ? SIZE_MAX : extractKey(first[partX]);
+        K leftY = (partY == 0) ? 0 : extractKey(second[partY - 1]);
+        K rightY = partY >= secondSize ? SIZE_MAX : extractKey(second[partY]);
+        if (leftX <= rightY && leftY <= rightX) {
+            // the partition is correct
+            return std::max(leftX, leftY);
+        }
+        if (leftX > rightY) {
+            high = partX - 1;
+            continue;
+        }
+        low = partX + 1;
+    }
+    util::raise("Invalid elements (not sorted?)");
+}
+// --------------------------------------------------------------------------
 }// namespace
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
@@ -131,11 +176,15 @@ class BeTree {
     static_assert(sizeof(BeNodeWrapperT) == B);
     static_assert(alignof(BeNodeWrapperT) == alignof(PageT));
 
-    // (LEAF_N / 2) must be an upper bound to enable
+    // (LEAF_N - 1) must be an upper bound to enable
     // preemptive splitting
+    /*
     static const std::size_t MAX_FLUSH_SIZE = std::min(
-            BeNodeWrapperT::NodeSizesT::LEAF_N / 2,
+            BeNodeWrapperT::NodeSizesT::LEAF_N - 1,
             BeNodeWrapperT::NodeSizesT::INNER_B_N);
+    */
+    static const std::size_t MAX_FLUSH_SIZE =
+            BeNodeWrapperT::NodeSizesT::LEAF_N - 1;
 
     struct alignas(alignof(std::max_align_t)) Header {
         std::uint64_t rootID = 0;
@@ -158,7 +207,7 @@ private:
     // splits a leaf node by creating a new page and returning it as well
     // as a copy of the middle key (pivot)
     // note: the returned page is still exclusively locked
-    PageT& splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT&, K&);
+    PageT& splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT&, K, K&);
     FRIEND_TEST(BeTreeMethods, splitLeafNode);
     // splits an inner node by creating a new page and returning it as well
     // as the removed middle key (pivot)
@@ -217,19 +266,19 @@ BeTree<K, V, B, N, EPSILON>::BeTree(const std::string& path, double growthFactor
     if (std::filesystem::exists(headerFile) && std::filesystem::is_regular_file(headerFile)) {
         fd = open(headerFile.c_str(), O_RDWR);
         if (pread(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-            throw std::runtime_error("Invalid betree header!");
+            util::raise("Invalid betree header!");
         }
     } else {
         fd = open(headerFile.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         if (fd < 0) {
-            throw std::runtime_error("Could not create the betree header!");
+            util::raise("Could not create the betree header!");
         }
         header.rootID = pageBuffer.createPage();
         // initialize the root node (leaf)
         initializeNode(pageBuffer.pinPage(header.rootID, true, true), NodeType::LEAF);
         pageBuffer.unpinPage(header.rootID, true);
         if (ftruncate(fd, sizeof(Header)) < 0) {
-            throw std::runtime_error("Could not increase the file size (betree).");
+            util::raise("Could not increase the file size (betree).");
         }
     }
 }
@@ -248,24 +297,30 @@ BeTree<K, V, B, N, EPSILON>::accessNode(PageT& page) const {
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 typename BeTree<K, V, B, N, EPSILON>::PageT&
 BeTree<K, V, B, N, EPSILON>::splitLeafNode(typename BeNodeWrapperT::BeLeafNodeT& leafNode,
-                                           K& resultKey) {
+                                           K medianKey, K& resultKey) {
     assert(leafNode.size >= 2);
-    const std::size_t splitIndex = (leafNode.size - 1) / 2;
-    resultKey = leafNode.keys[splitIndex];
+    auto medianIt = std::upper_bound(leafNode.keys.begin(),
+                                     leafNode.keys.begin() + leafNode.size,
+                                     medianKey);
+    std::size_t medianIndex = medianIt - leafNode.keys.begin();
+    if (medianIndex > leafNode.size) {
+        medianIndex = leafNode.size;
+    }
+    resultKey = medianKey;
     // create a new leaf node
     auto& rightPage = pageBuffer.pinPage(pageBuffer.createPage(), true, true);
     initializeNode(rightPage, NodeType::LEAF);
     assert(accessNode(rightPage).nodeType() == NodeType::LEAF);
     auto& rightLeaf = accessNode(rightPage).asLeaf();
     // copy the right pairs to the new node
-    std::move(std::execution::unseq, leafNode.keys.begin() + splitIndex + 1,
+    std::move(leafNode.keys.begin() + medianIndex,
               leafNode.keys.begin() + leafNode.size,
               rightLeaf.keys.begin());
-    std::move(leafNode.values.begin() + splitIndex + 1,
+    std::move(leafNode.values.begin() + medianIndex,
               leafNode.values.begin() + leafNode.size,
               rightLeaf.values.begin());
     // adjust the sizes
-    rightLeaf.size = leafNode.size / 2;
+    rightLeaf.size = leafNode.size - medianIndex;
     leafNode.size -= rightLeaf.size;
     return rightPage;
 }
@@ -547,17 +602,34 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             auto& leafChild = accessNode(childPage).asLeaf();
             // count the future node size
             bool needToSplit = false;
-            long long futureSize = leafChild.size;
+            std::size_t futureSize = leafChild.size;
+            std::unordered_set<K> seenKeys;
             for (const auto& upsert: vector) {
-                auto it = std::lower_bound(leafChild.keys.begin(),
-                                           leafChild.keys.begin() + leafChild.size, upsert.key);
-                bool foundKey = static_cast<std::size_t>(leafChild.keys.begin() - it) <
-                                        leafChild.size &&
-                                * it == upsert.key;
-                futureSize += (upsert.type == UpsertType::INSERT && !foundKey);
-                futureSize -= (upsert.type == UpsertType::DELETE && foundKey);
-                futureSize = std::max(futureSize, 0LL);
-                if (static_cast<std::size_t>(futureSize) > leafChild.keys.size()) {
+                if (upsert.type != UpsertType::INSERT && upsert.type != UpsertType::DELETE) {
+                    continue;
+                }
+                bool seen = seenKeys.contains(upsert.key);
+                if (!seen) {
+                    if (upsert.type == UpsertType::INSERT) {
+                        seenKeys.insert(upsert.key);
+                    } else {
+                        seenKeys.erase(upsert.key);
+                    }
+                    auto it = std::lower_bound(leafChild.keys.begin(),
+                                               leafChild.keys.begin() + leafChild.size, upsert.key);
+                    seen = static_cast<std::size_t>(leafChild.keys.begin() - it) <
+                                   leafChild.size &&
+                           * it == upsert.key;
+                }
+                // seen is true if the key already exists
+                if (upsert.type == UpsertType::INSERT) {
+                    // insert
+                    futureSize += !seen;
+                } else if (futureSize >= 1) {
+                    // delete
+                    futureSize -= seen;
+                }
+                if (futureSize > leafChild.keys.size()) {
                     needToSplit = true;
                     break;
                 }
@@ -565,9 +637,12 @@ void BeTree<K, V, B, N, EPSILON>::handleTraversalNode(PageT* currentPage,
             std::optional<SplitResult> rightSplitResult;
             if (needToSplit) {
                 // we need to split the leaf
+                K medianKey = findMedianKey<K, decltype(leafChild.keys), std::vector<Upsert<K, V>>>(
+                        leafChild.keys, leafChild.size,
+                        vector, vector.size());
                 K middleKey;
                 // <rightPage> is automatically uniquely pinned
-                PageT& rightPage = splitLeafNode(leafChild, middleKey);
+                PageT& rightPage = splitLeafNode(leafChild, medianKey, middleKey);
                 rightSplitResult = std::make_pair(middleKey, &rightPage);
                 // add the pivot
                 newPivots.emplace_back(childIndex, middleKey, rightPage.id);
@@ -779,9 +854,12 @@ bool BeTree<K, V, B, N, EPSILON>::handleRootRootUpsert(Upsert<K, V> upsert,
                 return false;
             }
             // full leaf -> split it
+            K medianKey = findMedianKey<K, decltype(leafNode.keys), std::vector<Upsert<K, V>>>(
+                    leafNode.keys, leafNode.size,
+                    {upsert}, 1);
             K middleKey;
             // <rightPage> is automatically uniquely pinned
-            PageT& rightPage = splitLeafNode(leafNode, middleKey);
+            PageT& rightPage = splitLeafNode(leafNode, medianKey, middleKey);
             // insert the pivot into the parent
             std::move_backward(rootNode.pivots.begin() + childIndex,
                                rootNode.pivots.begin() + rootNode.size,
@@ -1044,9 +1122,12 @@ void BeTree<K, V, B, N, EPSILON>::handleRootLeafUpsert(Upsert<K, V> upsert,
         assert(leafNode.size <= leafNode.keys.size());
         if (leafNode.size == leafNode.keys.size()) {
             // full leaf -> split it
+            K medianKey = findMedianKey<K, decltype(leafNode.keys), std::vector<Upsert<K, V>>>(
+                    leafNode.keys, leafNode.size,
+                    {upsert}, 1);
             K middleKey;
             // <rightPage> is automatically uniquely pinned
-            PageT& rightPage = splitLeafNode(leafNode, middleKey);
+            PageT& rightPage = splitLeafNode(leafNode, medianKey, middleKey);
             // create a new root
             PageT& newRoot = pageBuffer.pinPage(pageBuffer.createPage(), true, true);
             {
@@ -1234,7 +1315,7 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 void BeTree<K, V, B, N, EPSILON>::flush() {
     if (pwrite(fd, &header, sizeof(Header), 0) != sizeof(Header)) {
-        throw std::runtime_error("Could not save the header (betree).");
+        util::raise("Could not save the header (betree).");
     }
     pageBuffer.flush();
 }
@@ -1308,7 +1389,7 @@ std::ostream& operator<<(std::ostream& out, BeTree<K, V, B, N, EPSILON>& tree) {
                 queue.push(childID);
             }
         } else {
-            throw std::runtime_error("Invalid node type!");
+            util::raise("Invalid node type!");
         }
         tree.pageBuffer.unpinPage(currentID, false);
     }

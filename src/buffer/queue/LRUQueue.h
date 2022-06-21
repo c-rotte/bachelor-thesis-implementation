@@ -2,8 +2,8 @@
 #define B_EPSILON_LRUQUEUE_H
 // --------------------------------------------------------------------------
 #include "Queue.h"
+#include "src/util/ErrorHandler.h"
 #include <cassert>
-#include <stdexcept>
 #include <utility>
 // --------------------------------------------------------------------------
 namespace buffer::queue {
@@ -20,7 +20,7 @@ public:
 template<class K, class V>
 V& LRUQueue<K, V>::find(const K& key, bool modify) {
     if (!this->contains(key)) {
-        throw std::runtime_error("Key was not found! (LRU)");
+        util::raise("Key was not found! (LRU)");
     }
     auto it = this->pointerMap[key];
     if (modify) {

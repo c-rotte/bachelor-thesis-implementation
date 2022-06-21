@@ -1,56 +1,41 @@
-#include <array>
-#include <cassert>
-#include <cinttypes>
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
-#include <fcntl.h>
-#include <filesystem>
+#include "betree/BeNode.h"
+#include "btree/BNode.h"
 #include <iostream>
-#include <thread>
-#include <unistd.h>
-#include <vector>
 // --------------------------------------------------------------------------
 using namespace std;
+namespace besizes = betree::sizes;
+namespace bsizes = btree::sizes;
+// --------------------------------------------------------------------------
+constexpr std::size_t BLOCK_SIZE = 8192;
+using Key = std::uint64_t;
+using Value = std::array<unsigned char, 100>;
+// --------------------------------------------------------------------------
+template<std::size_t N>
+struct BeNodeForLoop {
+    template<std::size_t EPSILON>
+    static void iteration() {
+        using NodeSizesT = besizes::NodeSizes<Key, Value, BLOCK_SIZE, EPSILON>;
+        std::cout << "epsilon=" << EPSILON
+                  << ": LeafN=" << NodeSizesT::LEAF_N
+                  << ", InnerN=" << NodeSizesT::INNER_N
+                  << ", InnerBN=" << NodeSizesT::INNER_B_N
+                  << ", RootN=" << NodeSizesT::ROOT_N
+                  << std::endl;
+        if constexpr (EPSILON + 1 < N) {
+            BeNodeForLoop<N>::iteration<EPSILON + 1>();
+        }
+    }
+};
 // --------------------------------------------------------------------------
 int main() {
-    filesystem::remove("/tmp/12345");
-    int fd = open("/tmp/12345", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    ftruncate(fd, 1);
-    for (size_t i = 1; i <= 10000; i++) {
-        thread thread1([fd, i]() {
-            for(int a = 0; a < 100; a++){
-                ftruncate(fd, i + 1 + (rand() % 5000));
-                //std::cout << 1 << std::endl;
-            }
-        });
-        thread thread2([fd, i]() {
-            vector<unsigned char> buf;
-            for (size_t j = 0; j < i; j++) {
-                buf.push_back(static_cast<unsigned char>(j % 256));
-            }
-            size_t r = pwrite(fd, buf.data(), buf.size(), 0);
-            if(r != buf.size()){
-                throw std::runtime_error("1");
-            }
-        });
-        thread1.join();
-        thread2.join();
-
-        vector<unsigned char> buf(i);
-        size_t r = pread(fd, buf.data(), buf.size(), 0);
-        if(r != buf.size()){
-            throw std::runtime_error("2");
-        }
-        for (size_t j = 0; j < i; j++) {
-            unsigned char c = buf[j];
-            if(static_cast<unsigned char>(j % 256) != c){
-                throw std::runtime_error("3");
-            }
-        }
-        std::cout << "passed " << i << std::endl;
-    }
-
+    std::cout << "BeNode:\n";
+    BeNodeForLoop<96>::iteration<5>();
+    std::cout << "\n";
+    using NodeSizesT = bsizes::NodeSizes<Key, Value, BLOCK_SIZE>;
+    std::cout << "BNode:\n"
+              << "LeafN=" << NodeSizesT::LEAF_N
+              << ", InnerN=" << NodeSizesT::INNER_N
+              << std::endl;
     return 0;
 }
 // --------------------------------------------------------------------------

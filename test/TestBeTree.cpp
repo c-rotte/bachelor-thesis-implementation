@@ -19,25 +19,6 @@ void setup() {
 // --------------------------------------------------------------------------
 }// namespace
 // --------------------------------------------------------------------------
-template<std::size_t N>
-struct ForSingleThreadedInsertSmall {
-    template<std::size_t I>
-    static void iteration() {
-        constexpr size_t BLOCK_SIZE = 4096;
-        constexpr size_t PAGE_AMOUNT = 100;
-        BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, I> tree(DIRNAME, 1.25);
-        for (uint64_t i = 0; i < 1000; i++) {
-            tree.insert(i, i);
-        }
-        for (uint64_t i = 0; i < 1000; i++) {
-            auto find = tree.find(i);
-            ASSERT_TRUE(find);
-            ASSERT_EQ(*find, i);
-        }
-        if constexpr (I + 1 < N) ForSingleThreadedInsertSmall<N>::iteration<I + 10>();
-    }
-};
-// --------------------------------------------------------------------------
 TEST(BeTree, SingleThreadedInsertSmall) {
     setup();
     //ForSingleThreadedInsertSmall<90>::iteration<10>();

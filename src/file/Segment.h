@@ -1,6 +1,7 @@
 #ifndef B_EPSILON_SEGMENT_H
 #define B_EPSILON_SEGMENT_H
 // --------------------------------------------------------------------------
+#include "src/util/ErrorHandler.h"
 #include <cassert>
 #include <cinttypes>
 #include <cstddef>
@@ -73,10 +74,10 @@ Segment<B>::Segment(int fd, std::size_t fileOffset)
     assert(fd >= 0);
     // load the header
     if (pread(fd, &header, sizeof(Header), fileOffset) != sizeof(Header)) {
-        throw std::runtime_error("Invalid segment!");
+        util::raise("Invalid segment!");
     }
     if (header.blockSize != B) {
-        throw std::runtime_error("Different block sizes (segment)!");
+        util::raise("Different block sizes (segment)!");
     }
 }
 // --------------------------------------------------------------------------
@@ -93,7 +94,7 @@ std::uint64_t Segment<B>::getIDInBlock(std::uint64_t id) {
     std::uint64_t result;
     if (pread(fd, &result, sizeof(std::uint64_t),
               fileOffset + B + id * B) != sizeof(std::uint64_t)) {
-        throw std::runtime_error("Could not read id in block.");
+        util::raise("Could not read id in block.");
     }
     return result;
 }
@@ -102,7 +103,7 @@ template<std::uint64_t B>
 void Segment<B>::storeIDInBlock(std::uint64_t id, std::uint64_t idToStore) {
     if (pwrite(fd, &idToStore, sizeof(uint64_t),
                fileOffset + B + id * B) != sizeof(std::uint64_t)) {
-        throw std::runtime_error("Could not write id to block.");
+        util::raise("Could not write id to block.");
     }
 }
 // --------------------------------------------------------------------------
@@ -154,7 +155,7 @@ std::uint64_t Segment<B>::createBlock() {
         header.occupiedBlocks++;
         return result;
     }
-    throw std::runtime_error("All blocks were occupied!");
+    util::raise("All blocks were occupied!");
 }
 // --------------------------------------------------------------------------
 template<std::uint64_t B>
@@ -175,7 +176,7 @@ template<std::uint64_t B>
 std::array<unsigned char, B> Segment<B>::readBlock(std::uint64_t id) {
     std::array<unsigned char, B> result;
     if (pread(fd, result.data(), B, fileOffset + B + id * B) != B) {
-        throw std::runtime_error("Could not read the block.");
+        util::raise("Could not read the block.");
     }
     return result;
 }
@@ -183,14 +184,14 @@ std::array<unsigned char, B> Segment<B>::readBlock(std::uint64_t id) {
 template<std::uint64_t B>
 void Segment<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B> data) {
     if (pwrite(fd, data.data(), B, fileOffset + B + id * B) != B) {
-        throw std::runtime_error("Could not write the block.");
+        util::raise("Could not write the block.");
     }
 }
 // --------------------------------------------------------------------------
 template<std::uint64_t B>
 void Segment<B>::flush() {
     if (pwrite(fd, &header, sizeof(Header), fileOffset) != sizeof(Header)) {
-        throw std::runtime_error("Could not save the header.");
+        util::raise("Could not save the header.");
     }
 }
 // --------------------------------------------------------------------------

@@ -21,8 +21,8 @@ struct BeNodeForLoop {
                   << ", InnerBN=" << NodeSizesT::INNER_B_N
                   << ", RootN=" << NodeSizesT::ROOT_N
                   << std::endl;
-        if constexpr (EPSILON + 1 < N) {
-            BeNodeForLoop<N>::iteration<EPSILON + 1>();
+        if constexpr (EPSILON + 5 < N) {
+            BeNodeForLoop<N>::iteration<EPSILON + 5>();
         }
     }
 };

@@ -364,12 +364,13 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::unpinPage(Page<B>& page, bool dirty) {
-    // release the page lock
-    page.mutex.unlock();
     assert(page.pins >= 1);
     if (dirty) {
-        page.dirty = true;// set page to dirty
+        // set page to dirty
+        page.dirty = true;
     }
+    // release the page lock
+    page.mutex.unlock();
     --page.pins;
 }
 // --------------------------------------------------------------------------

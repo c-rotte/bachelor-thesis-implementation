@@ -251,6 +251,7 @@ public:
     void erase(const K&);
     // attempts to find (K,V) and returns V
     std::optional<V> find(const K&);
+    std::size_t pageAmount() const;
     // saves the betree
     void flush();
     // prints out the betree (dot language)
@@ -1315,6 +1316,11 @@ std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
         *currentValue = *currentValue + std::move(updateValue);
     }
     return currentValue;
+}
+// --------------------------------------------------------------------------
+template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
+std::size_t BeTree<K, V, B, N, EPSILON>::pageAmount() const {
+    return pageBuffer.pageAmount();
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>

@@ -80,6 +80,7 @@ public:
     void erase(const K&);
     // attempts to find (K,V) and returns V
     std::optional<V> find(const K&);
+    std::size_t pageAmount() const;
     // saves the btree
     void flush();
     // prints out the btree (dot language)
@@ -602,6 +603,11 @@ std::optional<V> BTree<K, V, B, N>::find(const K& key) {
     }
     pageBuffer.unpinPage(*currentPage, false);
     return result;
+}
+// --------------------------------------------------------------------------
+template<class K, class V, std::size_t B, std::size_t N>
+std::size_t BTree<K, V, B, N>::pageAmount() const {
+    return pageBuffer.pageAmount();
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t B, std::size_t N>

@@ -61,7 +61,7 @@ public:
     using ModeFunction = std::function<bool(Page<B>&)>;
     Page<B>& pinPage(std::uint64_t, bool, bool = false,
                      std::optional<ModeFunction> = std::nullopt);
-    void unpinPage(std::uint64_t, bool);
+    void unpinPage(Page<B>&, bool);
 
     void flush();// not thread-safe
 
@@ -123,11 +123,8 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>
-void PageBuffer<B, N>::unpinPage(std::uint64_t id, bool) {
-    if (id >= pages.size()) {
-        util::raise("Invalid id!");
-    }
-    pages[id].mutex.unlock();
+void PageBuffer<B, N>::unpinPage(Page<B>& page, bool) {
+    page.mutex.unlock();
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>

@@ -6,7 +6,7 @@ using namespace std;
 namespace besizes = betree::sizes;
 namespace bsizes = btree::sizes;
 // --------------------------------------------------------------------------
-constexpr std::size_t BLOCK_SIZE = 8192;
+constexpr std::size_t BLOCK_SIZE = 16384;
 using Key = std::uint64_t;
 using Value = std::array<unsigned char, 100>;
 // --------------------------------------------------------------------------
@@ -21,8 +21,8 @@ struct BeNodeForLoop {
                   << ", InnerBN=" << NodeSizesT::INNER_B_N
                   << ", RootN=" << NodeSizesT::ROOT_N
                   << std::endl;
-        if constexpr (EPSILON + 1 < N) {
-            BeNodeForLoop<N>::iteration<EPSILON + 1>();
+        if constexpr (EPSILON + 5 < N) {
+            BeNodeForLoop<N>::iteration<EPSILON + 5>();
         }
     }
 };

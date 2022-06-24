@@ -11,7 +11,7 @@ SimpleBinaryTree::SimpleBinaryTree(const std::string& path, std::size_t slowDown
     auto& rootPage = pageBuffer.pinPage(rootID, true);
     initializeNode(rootPage);
     getNode(rootPage).value = 0;
-    pageBuffer.unpinPage(rootID, true);
+    pageBuffer.unpinPage(rootPage, true);
 }
 // --------------------------------------------------------------------------
 void SimpleBinaryTree::initializeNode(buffer::Page<4096>& page) const {
@@ -32,32 +32,32 @@ void SimpleBinaryTree::insert(int value) {
             if (getNode(*currentPage).leftID) {
                 auto* nextPage = &pageBuffer.pinPage(
                         *getNode(*currentPage).leftID, true);
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 currentPage = nextPage;
             } else {
                 std::uint64_t newPageID = pageBuffer.createPage();
                 auto* nextPage = &pageBuffer.pinPage(newPageID, true, true);
                 getNode(*currentPage).leftID = newPageID;
-                pageBuffer.unpinPage(currentPage->id, true);
+                pageBuffer.unpinPage(*currentPage, true);
                 initializeNode(*nextPage);
                 getNode(*nextPage).value = value;
-                pageBuffer.unpinPage(nextPage->id, true);
+                pageBuffer.unpinPage(*nextPage, true);
                 return;
             }
         } else {
             if (getNode(*currentPage).rightID) {
                 auto* nextPage = &pageBuffer.pinPage(
                         *getNode(*currentPage).rightID, true);
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 currentPage = nextPage;
             } else {
                 std::uint64_t newPageID = pageBuffer.createPage();
                 auto* nextPage = &pageBuffer.pinPage(newPageID, true, true);
                 getNode(*currentPage).rightID = newPageID;
-                pageBuffer.unpinPage(currentPage->id, true);
+                pageBuffer.unpinPage(*currentPage, true);
                 initializeNode(*nextPage);
                 getNode(*nextPage).value = value;
-                pageBuffer.unpinPage(nextPage->id, true);
+                pageBuffer.unpinPage(*nextPage, true);
                 return;
             }
         }
@@ -71,26 +71,26 @@ bool SimpleBinaryTree::search(int value) {
         //std::this_thread::sleep_for(std::chrono::microseconds(slowDownUS));
         if (value <= *getNode(*currentPage).value) {
             if (value == *getNode(*currentPage).value) {
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 return true;
             }
             if (getNode(*currentPage).leftID) {
                 auto* nextPage = &pageBuffer.pinPage(
                         *getNode(*currentPage).leftID, false);
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 currentPage = nextPage;
             } else {
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 return false;
             }
         } else {
             if (getNode(*currentPage).rightID) {
                 auto* nextPage = &pageBuffer.pinPage(
                         *getNode(*currentPage).rightID, false);
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 currentPage = nextPage;
             } else {
-                pageBuffer.unpinPage(currentPage->id, false);
+                pageBuffer.unpinPage(*currentPage, false);
                 return false;
             }
         }

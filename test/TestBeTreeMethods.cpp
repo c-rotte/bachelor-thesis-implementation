@@ -22,78 +22,6 @@ void setup() {
 // --------------------------------------------------------------------------
 namespace betree {
 // --------------------------------------------------------------------------
-/*
-TEST(BeTreeMethods, splitLeafNode) {
-    setup();
-    constexpr size_t BLOCK_SIZE = 256;
-    constexpr size_t PAGE_AMOUNT = 100;
-    using BeTreeT = BeTree<uint64_t, uint64_t, BLOCK_SIZE, PAGE_AMOUNT, 50>;
-    BeTreeT tree(DIRNAME, 1.25);
-    {
-        BeTreeT::BeNodeWrapperT::BeLeafNodeT leafNode;
-        uint64_t totalXOR = 0;
-        for (uint64_t i = 0; i < leafNode.keys.size(); i++) {
-            leafNode.keys[i] = i;
-            leafNode.values[i] = i;
-            leafNode.size++;
-            totalXOR ^= i;
-        }
-        const std::size_t totalSize = leafNode.size;
-        uint64_t middleKey;
-        BeTreeT::PageT& rightPage = tree.splitLeafNode(leafNode, middleKey);
-        BeTreeT::BeNodeWrapperT::BeLeafNodeT& rightLeafNode = tree.accessNode(rightPage).asLeaf();
-        ASSERT_EQ(totalSize, leafNode.size + rightLeafNode.size);
-        const std::size_t sizeDifference = leafNode.size > rightLeafNode.size
-                                                   ? leafNode.size - rightLeafNode.size
-                                                   : rightLeafNode.size - leafNode.size;
-        ASSERT_LE(sizeDifference, 1);
-        for (uint64_t i = 0; i < leafNode.size; i++) {
-            ASSERT_EQ(leafNode.keys[i], leafNode.values[i]);
-            ASSERT_LE(leafNode.keys[i], middleKey);
-            totalXOR ^= leafNode.keys[i];
-        }
-        for (uint64_t i = 0; i < rightLeafNode.size; i++) {
-            ASSERT_EQ(rightLeafNode.keys[i], rightLeafNode.values[i]);
-            ASSERT_GT(rightLeafNode.keys[i], middleKey);
-            totalXOR ^= rightLeafNode.keys[i];
-        }
-        ASSERT_EQ(totalXOR, 0);
-        tree.pageBuffer.unpinPage(rightPage.id, true);
-    }
-    {
-        BeTreeT::BeNodeWrapperT::BeLeafNodeT leafNode;
-        uint64_t totalXOR = 0;
-        for (uint64_t i = 0; i < leafNode.keys.size() / 2; i++) {
-            leafNode.keys[i] = i;
-            leafNode.values[i] = i;
-            leafNode.size++;
-            totalXOR ^= i;
-        }
-        const std::size_t totalSize = leafNode.size;
-        uint64_t middleKey;
-        BeTreeT::PageT& rightPage = tree.splitLeafNode(leafNode, middleKey);
-        BeTreeT::BeNodeWrapperT::BeLeafNodeT& rightLeafNode = tree.accessNode(rightPage).asLeaf();
-        ASSERT_EQ(totalSize, leafNode.size + rightLeafNode.size);
-        const std::size_t sizeDifference = leafNode.size > rightLeafNode.size
-                                                   ? leafNode.size - rightLeafNode.size
-                                                   : rightLeafNode.size - leafNode.size;
-        ASSERT_LE(sizeDifference, 1);
-        for (uint64_t i = 0; i < leafNode.size; i++) {
-            ASSERT_EQ(leafNode.keys[i], leafNode.values[i]);
-            ASSERT_LE(leafNode.keys[i], middleKey);
-            totalXOR ^= leafNode.keys[i];
-        }
-        for (uint64_t i = 0; i < rightLeafNode.size; i++) {
-            ASSERT_EQ(rightLeafNode.keys[i], rightLeafNode.values[i]);
-            ASSERT_GT(rightLeafNode.keys[i], middleKey);
-            totalXOR ^= rightLeafNode.keys[i];
-        }
-        ASSERT_EQ(totalXOR, 0);
-        tree.pageBuffer.unpinPage(rightPage.id, true);
-    }
-}
- */
-// --------------------------------------------------------------------------
 TEST(BeTreeMethods, splitInnerNode) {
     setup();
     constexpr size_t BLOCK_SIZE = 256;
@@ -152,7 +80,7 @@ TEST(BeTreeMethods, splitInnerNode) {
         }
         totalXOR ^= middleKey;
         ASSERT_EQ(totalXOR, 0);
-        tree.pageBuffer.unpinPage(rightPage.id, true);
+        tree.pageBuffer.unpinPage(rightPage, true);
     }
 }
 // --------------------------------------------------------------------------

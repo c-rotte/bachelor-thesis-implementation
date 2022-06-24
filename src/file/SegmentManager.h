@@ -59,6 +59,7 @@ public:
     std::array<unsigned char, B> readBlock(std::uint64_t);
     void writeBlock(std::uint64_t, std::array<unsigned char, B>);
 
+    std::size_t allocatedBlocks() const;
     void flush();// not thread-safe
 
     SegmentManager<B>& operator=(const SegmentManager<B>&) = delete;
@@ -237,6 +238,16 @@ void SegmentManager<B>::writeBlock(std::uint64_t id, std::array<unsigned char, B
         assert(segmentContainer.segment);
         segmentContainer.segment->writeBlock(blockID, std::move(data));
     }
+}
+// --------------------------------------------------------------------------
+template<std::size_t B>
+std::size_t SegmentManager<B>::allocatedBlocks() const {
+    std::size_t result = 0;
+    for (const auto& segmentContainerPtr: segments) {
+        assert(segmentContainerPtr->segment);
+        result += segmentContainerPtr->segment->allocatedBlocks();
+    }
+    return result;
 }
 // --------------------------------------------------------------------------
 template<std::size_t B>

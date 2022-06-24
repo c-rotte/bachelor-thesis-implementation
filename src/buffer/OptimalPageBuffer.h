@@ -63,6 +63,7 @@ public:
                      std::optional<ModeFunction> = std::nullopt);
     void unpinPage(Page<B>&, bool);
 
+    std::size_t pageAmount() const;
     void flush();// not thread-safe
 
     PageBuffer<B, N>& operator=(const PageBuffer<B, N>&) = delete;
@@ -125,6 +126,11 @@ Page<B>& PageBuffer<B, N>::pinPage(std::uint64_t id, bool exclusive,
 template<std::size_t B, std::size_t N>
 void PageBuffer<B, N>::unpinPage(Page<B>& page, bool) {
     page.mutex.unlock();
+}
+// --------------------------------------------------------------------------
+template<std::size_t B, std::size_t N>
+std::size_t PageBuffer<B, N>::pageAmount() const {
+    return header.idCounter;
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>

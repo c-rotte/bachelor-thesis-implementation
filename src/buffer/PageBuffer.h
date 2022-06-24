@@ -68,7 +68,8 @@ public:
                      std::optional<ModeFunction> = std::nullopt);
     void unpinPage(Page<B>&, bool);
 
-    void flush();// not thread-safe
+    std::size_t pageAmount() const;// not thread-safe
+    void flush();                  // not thread-safe
 
     PageBuffer<B, N>& operator=(const PageBuffer<B, N>&) = delete;
     PageBuffer<B, N>& operator=(PageBuffer<B, N>&&) noexcept = default;
@@ -372,6 +373,11 @@ void PageBuffer<B, N>::unpinPage(Page<B>& page, bool dirty) {
     // release the page lock
     page.mutex.unlock();
     --page.pins;
+}
+// --------------------------------------------------------------------------
+template<std::size_t B, std::size_t N>
+std::size_t PageBuffer<B, N>::pageAmount() const {
+    return segmentManager.allocatedBlocks();
 }
 // --------------------------------------------------------------------------
 template<std::size_t B, std::size_t N>

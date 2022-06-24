@@ -1233,6 +1233,10 @@ void BeTree<K, V, B, N, EPSILON>::erase(const K& key) {
 template<class K, class V, std::size_t B, std::size_t N, short EPSILON>
 std::optional<V> BeTree<K, V, B, N, EPSILON>::find(const K& key) {
     PageT& rootPage = pageBuffer.pinPage(header.rootID, false);
+    if (accessNode(rootPage).nodeType() != NodeType::ROOT) {
+        pageBuffer.unpinPage(rootPage, false);
+        return std::nullopt;
+    }
     assert(accessNode(rootPage).nodeType() == NodeType::ROOT);
     auto& rootNode = accessNode(rootPage).asRoot();
     auto pivotIt = std::lower_bound(rootNode.pivots.begin(),

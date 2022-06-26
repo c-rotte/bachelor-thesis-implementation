@@ -21,15 +21,15 @@ struct BeNodeForLoop {
                   << ", InnerBN=" << NodeSizesT::INNER_B_N
                   << ", RootN=" << NodeSizesT::ROOT_N
                   << std::endl;
-        if constexpr (EPSILON + 5 < N) {
-            BeNodeForLoop<N>::iteration<EPSILON + 5>();
+        if constexpr (EPSILON + 10 < N) {
+            BeNodeForLoop<N>::iteration<EPSILON + 10>();
         }
     }
 };
 // --------------------------------------------------------------------------
 int main() {
     std::cout << "BeNode:\n";
-    BeNodeForLoop<96>::iteration<5>();
+    BeNodeForLoop<101>::iteration<0>();
     std::cout << "\n";
     using NodeSizesT = bsizes::NodeSizes<Key, Value, BLOCK_SIZE>;
     std::cout << "BNode:\n"

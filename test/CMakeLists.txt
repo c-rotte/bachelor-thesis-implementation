@@ -4,7 +4,6 @@ set(TEST_SOURCES
         TestQueue.cpp
         TestPageBuffer.cpp
         utils/SimpleBinaryTree.cpp
-        TestBeTreeMethods.cpp
         TestBeTree.cpp
         TestBTree.cpp)
 

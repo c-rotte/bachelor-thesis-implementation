@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <cinttypes>
+#include <cmath>
 #include <cstddef>
 #include <iostream>
 #include <memory>
@@ -99,17 +100,19 @@ private:
 
     // the page size contains the following:
     static constexpr std::size_t BASE_LEAF_SIZE = TOTAL_SIZE - sizeof(BeLeafNode<K, V, 0>);
-    static constexpr std::size_t BASE_INNER_SIZE = TOTAL_SIZE - sizeof(BeInnerNode<K, V, 0, 0>);
+    static constexpr std::size_t BASE_INNER_SIZE = TOTAL_SIZE - sizeof(BeInnerNode<K, V, 1, 3>);
     static constexpr std::size_t BASE_ROOT_SIZE = TOTAL_SIZE - sizeof(BeRootNode<K, 0>);
 
-    static constexpr std::size_t INNER_DATA_SIZE = BASE_INNER_SIZE * EPSILON / 100;
+    static constexpr std::size_t INNER_DATA_SIZE = std::round(std::pow(BASE_INNER_SIZE, EPSILON / 100.0));
     static constexpr std::size_t INNER_BUFFER_SIZE = BASE_INNER_SIZE - INNER_DATA_SIZE;
 
     // n * sizeof(K) + (n + 1) * sizeof(uint64_t) = INNER_DATA_SIZE <->
     // n * (sizeof(K) + sizeof(uint64_t)) = INNER_DATA_SIZE - sizeof(uint64_t) <->
     // n = (INNER_DATA_SIZE - sizeof(uint64_t)) / (sizeof(K) + sizeof(uint64_t))
     static constexpr std::size_t INNER_N_BEFORE_CORRECTION =
-            (INNER_DATA_SIZE - sizeof(std::uint64_t)) / (sizeof(K) + sizeof(std::uint64_t));
+            3 + std::max(0LL, (static_cast<long long>(INNER_DATA_SIZE) -
+                               static_cast<long long>(sizeof(std::uint64_t))) /
+                                      static_cast<long long>(sizeof(K) + sizeof(std::uint64_t)));
     static constexpr std::size_t ROOT_N_BEFORE_CORRECTION =
             (BASE_ROOT_SIZE - sizeof(std::uint64_t)) / (sizeof(K) + sizeof(std::uint64_t));
 
@@ -138,10 +141,10 @@ constexpr std::size_t NodeSizes<K, V, TOTAL_SIZE, EPSILON>::getInnerBN() {
     constexpr std::size_t bn = INNER_BUFFER_SIZE / sizeof(Upsert<K, V>);
     // check if we can move the removed slot to the buffer
     // (since we removed one slot from the inner node)
-    if constexpr (sizeof(BeInnerNode<K, V, bn + 1, INNER_N>) <= TOTAL_SIZE) {
-        return bn + 1;
+    if constexpr (sizeof(BeInnerNode<K, V, 1 + bn + 1, INNER_N>) <= TOTAL_SIZE) {
+        return 1 + bn + 1;
     }
-    return bn;
+    return 1 + bn;
 }
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t TOTAL_SIZE, short EPSILON>
@@ -150,7 +153,7 @@ constexpr std::size_t NodeSizes<K, V, TOTAL_SIZE, EPSILON>::getRootN() {
     return ROOT_N_BEFORE_CORRECTION - (1 - ROOT_N_BEFORE_CORRECTION % 2);
 }
 // --------------------------------------------------------------------------
-}// namespace
+}// namespace sizes
 // --------------------------------------------------------------------------
 template<class K, class V, std::size_t PAGE_SIZE, short EPSILON>
 class BeNodeWrapper {
